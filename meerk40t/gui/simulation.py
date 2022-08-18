@@ -1,4 +1,5 @@
 import math
+import platform
 
 import wx
 
@@ -6,6 +7,7 @@ from meerk40t.kernel import Job, signal_listener
 
 from ..core.cutcode import CutCode
 from ..svgelements import Matrix
+from .choicepropertypanel import ChoicePropertyPanel
 from .icons import (
     STD_ICON_SIZE,
     icons8_laser_beam_hazard2_50,
@@ -15,7 +17,6 @@ from .icons import (
 )
 from .laserrender import DRAW_MODE_BACKGROUND, DRAW_MODE_GUIDES, LaserRender
 from .mwindow import MWindow
-from .choicepropertypanel import ChoicePropertyPanel
 from .scene.scenepanel import ScenePanel
 from .scene.widget import Widget
 from .scenewidgets.bedwidget import BedWidget
@@ -62,10 +63,6 @@ class SimulationPanel(wx.Panel, Job):
         )
         self.view_pane.SetCanFocus(False)
         self.widget_scene = self.view_pane.scene
-        # No Labels in circular
-        if self.widget_scene.context.draw_mode & DRAW_MODE_GUIDES == 0:
-            # Was set...
-            self.widget_scene.context.draw_mode ^= DRAW_MODE_GUIDES
 
         # poor mans slide out
         self.btn_slide_options = wx.Button(self, wx.ID_ANY, "<")
@@ -157,13 +154,12 @@ class SimulationPanel(wx.Panel, Job):
         self.widget_scene.tick_distance = 10  # mm
 
         self.widget_scene.add_scenewidget(
-            GridWidget(self.widget_scene, name="Simulation")
+            GridWidget(self.widget_scene, name="Simulation", suppress_labels=True)
         )
         self.widget_scene.add_scenewidget(
             BedWidget(self.widget_scene, name="Simulation")
         )
-        self.reticle = SimReticleWidget(self.widget_scene, self)
-        self.widget_scene.add_interfacewidget(self.reticle)
+        self.widget_scene.add_interfacewidget(SimReticleWidget(self.widget_scene, self))
         self.running = False
         if index == -1:
             disable_window(self)
@@ -241,7 +237,17 @@ class SimulationPanel(wx.Panel, Job):
         # |   E    |   +-------+
         # |   W    |   |Refresh|
         # +--------+---+-------+
-        self.btn_slide_options.SetMinSize(wx.Size(20, -1))
+        # Linux requires a minimum  height / width to display a text inside a button
+        system = platform.system()
+        if system == "Darwin":
+            mysize = 40
+        elif system == "Windows":
+            mysize = 23
+        elif system == "Linux":
+            mysize = 40
+        else:
+            mysize = 20
+        self.btn_slide_options.SetMinSize(wx.Size(mysize, -1))
         self.voption_sizer = wx.BoxSizer(wx.VERTICAL)
         self.voption_sizer.Add(self.panel_optimize, 1, wx.EXPAND, 0)
         self.voption_sizer.Add(self.btn_redo_it, 0, wx.EXPAND, 0)
@@ -283,9 +289,9 @@ class SimulationPanel(wx.Panel, Job):
         h_sizer_buttons.Add(self.button_play, 0, 0, 0)
         sizer_4.Add(self.slider_playbackspeed, 0, wx.EXPAND, 0)
         label_playback_speed = wx.StaticText(self, wx.ID_ANY, _("Playback Speed"))
-        sizer_5.Add(label_playback_speed, 2, 0, 0)
-        sizer_5.Add(self.text_playback_speed, 1, 0, 0)
-        sizer_4.Add(sizer_5, 1, wx.EXPAND, 0)
+        sizer_5.Add(label_playback_speed, 2, wx.ALIGN_CENTER_VERTICAL, 0)
+        sizer_5.Add(self.text_playback_speed, 1, wx.EXPAND, 0)
+        sizer_4.Add(sizer_5, 0, wx.EXPAND, 0)
         h_sizer_buttons.Add(sizer_4, 1, wx.EXPAND, 0)
         sizer_6.Add(self.combo_device, 0, wx.EXPAND, 0)
         sizer_6.Add(self.button_spool, 0, wx.EXPAND, 0)

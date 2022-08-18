@@ -819,6 +819,8 @@ class ShadowTree:
         wxcolor = self.wxtree.GetForegroundColour()
         if hasattr(node, "stroke"):
             wxcolor = self.safe_color(node.stroke)
+        elif hasattr(node, "color"):
+            wxcolor = self.safe_color(node.color)
         else:
             back_color = self.wxtree.GetBackgroundColour()
             rgb = back_color.Get()
@@ -830,7 +832,7 @@ class ShadowTree:
                     textcolor = c1
                 else:
                     textcolor = c2
-                wxcolor = swizzlecolor(textcolor)
+                wxcolor = wx.Colour(swizzlecolor(textcolor))
         try:
             tree.SetItemTextColour(node.item, wxcolor)
         except (AttributeError, KeyError, TypeError):
@@ -1061,13 +1063,13 @@ class ShadowTree:
                     # print ("Yes: ", checker, maxspeed_minpower)
                     danger = False
                     if hasattr(node, "power"):
-                        value = node.power
+                        value = float(node.power)
                         if maxspeed_minpower[0] and value < maxspeed_minpower[1]:
                             danger = True
                         if maxspeed_minpower[2] and value > maxspeed_minpower[3]:
                             danger = True
                     if hasattr(node, "speed"):
-                        value = node.speed
+                        value = float(node.speed)
                         if maxspeed_minpower[4] and value < maxspeed_minpower[5]:
                             danger = True
                         if maxspeed_minpower[6] and value > maxspeed_minpower[7]:

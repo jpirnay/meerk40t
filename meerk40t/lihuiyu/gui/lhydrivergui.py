@@ -1,14 +1,12 @@
 # -*- coding: ISO-8859-1 -*-
 import wx
-from meerk40t.gui.wxutils import ScrolledPanel
 
 from meerk40t.core.units import Length
+from meerk40t.device.gui.warningpanel import WarningPanel
 from meerk40t.gui.icons import icons8_administrative_tools_50
 from meerk40t.gui.mwindow import MWindow
+from meerk40t.gui.wxutils import ScrolledPanel, TextCtrl
 from meerk40t.kernel import signal_listener
-from meerk40t.gui.wxutils import TextCtrl
-from meerk40t.device.gui.warningpanel import WarningPanel
-
 
 _ = wx.GetTranslation
 
@@ -116,7 +114,7 @@ class ConfigurationUsb(wx.Panel):
         sizer_buffer.Add(self.text_buffer_length, 1, wx.EXPAND, 0)
 
         label_14 = wx.StaticText(self, wx.ID_ANY, "/")
-        sizer_buffer.Add(label_14, 0, wx.EXPAND, 0)
+        sizer_buffer.Add(label_14, 0, wx.ALIGN_CENTER_VERTICAL, 0)
 
         self.spin_packet_buffer_max = wx.SpinCtrl(
             self, wx.ID_ANY, "1500", min=1, max=1000000
@@ -882,7 +880,7 @@ class ConfigurationSetupPanel(ScrolledPanel):
         sizer_36.Add(self.text_rapid_x, 1, wx.EXPAND, 0)
 
         label_2 = wx.StaticText(self, wx.ID_ANY, _("mm/s"))
-        sizer_36.Add(label_2, 0, wx.EXPAND, 0)
+        sizer_36.Add(label_2, 0, wx.ALIGN_CENTER_VERTICAL, 0)
 
         sizer_35 = wx.StaticBoxSizer(
             wx.StaticBox(self, wx.ID_ANY, _("Y Travel Speed:")), wx.HORIZONTAL
@@ -895,7 +893,7 @@ class ConfigurationSetupPanel(ScrolledPanel):
         sizer_35.Add(self.text_rapid_y, 1, wx.EXPAND, 0)
 
         label_4 = wx.StaticText(self, wx.ID_ANY, _("mm/s"))
-        sizer_35.Add(label_4, 0, wx.EXPAND, 0)
+        sizer_35.Add(label_4, 0, wx.ALIGN_CENTER_VERTICAL, 0)
 
         sizer_speed = wx.StaticBoxSizer(
             wx.StaticBox(self, wx.ID_ANY, _("Speed:")), wx.VERTICAL
