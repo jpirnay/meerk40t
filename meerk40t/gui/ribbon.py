@@ -1728,8 +1728,10 @@ class Art:
             and self.orientation == self.RIBBON_ORIENTATION_AUTO
         )
         x, y, max_x, max_y = page.position
-        page_width = max_x - x
-        page_height = max_y - y
+        page_width = max_x - x - 2 * self.page_panel_buffer
+        page_height = max_y - y - 2 * self.page_panel_buffer
+        x += self.page_panel_buffer
+        y += self.page_panel_buffer
         bestw = 0
         besth = 0
         main_dimension =  page_width if is_horizontal else page_height
@@ -1764,11 +1766,23 @@ class Art:
                 x_extent = psize
             else:
                 y_extent = psize
+
+            # Now calculate the buttons
+            if is_horizontal:
+                needed_extent = psize
+                needed_extent = 1.25 * panel_buttons[idx] * DEFAULT_SIZE
+                if needed_extent < x_extent:
+                    x_extent = needed_extent
+            else:
+                needed_extent = psize
+                if needed_extent < y_extent:
+                    y_extent = needed_extent
+
             panel.position = (x, y, x + x_extent, y + y_extent)
             if is_horizontal:
-                x += psize
+                x += x_extent
             else:
-                y += psize
+                y += y_extent
             displayed += 1
 
         return bestw, besth
