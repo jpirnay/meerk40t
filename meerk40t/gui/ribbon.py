@@ -53,7 +53,7 @@ _ = wx.GetTranslation
 
 SMALL_RESIZE_FACTOR = 2 / 3
 TINY_RESIZE_FACTOR = 0.5
-
+DEFAULT_SIZE = 50
 
 class DropDown:
     """
@@ -128,35 +128,17 @@ class Button:
         self.rule_enabled = None
         self.min_width = 0
         self.min_height = 0
-        self.default_width = 50
+        self.default_width = DEFAULT_SIZE
         self.set_aspect(**description)
         self.apply_enable_rules()
-        # self.sizes = {
-        #     "large_label": (0, 0),
-        #     "small_label": (0, 0),
-        #     "tiny_label": (0, 0),
-        #     "large": (0, 0),
-        #     "small": (0, 0),
-        #     "tiny": (0, 0),
-        # }
-
-    # def calc_sizes(self, dc):
-    #     def calc(bmap, uselabel):
-    #         w = 0
-    #         h = 0
-    #         return w, h
-    #     bw, bh = calc(self.bitmap_large, True)
-    #     self.sizes["large_label"] = (bw, bh)
-    #     bw, bh = calc(self.bitmap_large, False)
-    #     self.sizes["large"] = (bw, bh)
-    #     bw, bh = calc(self.bitmap_small, True)
-    #     self.sizes["small_label"] = (bw, bh)
-    #     bw, bh = calc(self.bitmap_small, False)
-    #     self.sizes["small"] = (bw, bh)
-    #     bw, bh = calc(self.bitmap_tiny, True)
-    #     self.sizes["tiny_label"] = (bw, bh)
-    #     bw, bh = calc(self.bitmap_tiny, False)
-    #     self.sizes["tiny"] = (bw, bh)
+        self.sizes = {
+            "large_label": (0, 0),
+            "small_label": (0, 0),
+            "tiny_label": (0, 0),
+            "large": (0, 0),
+            "small": (0, 0),
+            "tiny": (0, 0),
+        }
 
     def set_aspect(
         self,
@@ -1643,23 +1625,157 @@ class Art:
             #     print(f"page: {page.position}")
             self.page_layout(dc, page)
 
-    # def preferred_button_size_for_panel(self, dc, panel):
-    #     # Provides
-    #     x, y, max_x, max_y = panel.position
-    #     panel_width = max_x - x
-    #     panel_height = max_y - y
-    #     button_sizes = []
-    #     for button in panel.buttons:
-    #         this_button_sizes = []
-    #         # We calculate the space requirement for regular,
-    #         # small and tiny buttons, both with and without
-    #         # labels
-    #         button_sizes.append(this_button_sizes)
-    #     button_width = 0
-    #     button_height = 0
-    #     return button_width, button_height
+    def calc_button_sizes(self, dc, page):
+
+        def calc(dc, str_size, str_label, bmap):
+            w, h = bmap.Size
+
+            if str_size.startswith("large"):
+                font = self.default_font
+                default_w = DEFAULT_SIZE
+            elif str_size.startswith("small"):
+                font = self.small_font
+                default_w = int(SMALL_RESIZE_FACTOR * DEFAULT_SIZE)
+            elif str_size.startswith("tiny"):
+                font = self.tiny_font
+                default_w = int(TINY_RESIZE_FACTOR * DEFAULT_SIZE)
+            w = max(w, default_w)
+            h = max(h, default_w)
+            if str_label:
+                y = h
+                x = w
+                label_text = list(str_label.split(" "))
+                # We try to establish whether this would fit properly.
+                # We allow a small oversize of 25% to the button,
+                # before we try to reduce the fontsize
+                dc.SetFont(font)
+
+                y += self.bitmap_text_buffer
+                i = 0
+                while i < len(label_text):
+                    # We know by definition that all single words
+                    # are okay for drawing, now we check whether
+                    # we can draw multiple in one line
+                    word = label_text[i]
+                    cont = True
+                    while cont:
+                        cont = False
+                        if i < len(label_text) - 1:
+                            nextword = label_text[i + 1]
+                            test = word + " " + nextword
+                            tw, th = dc.GetTextExtent(test)
+                            if tw < w:
+                                word = test
+                                i += 1
+                                cont = True
+                            elif tw < 1.2 * w:
+                                word = test
+                                i += 1
+                                cont = True
+                                x = 1.2 * w
+
+                    text_width, text_height = dc.GetTextExtent(word)
+                    y += text_height
+                    i += 1
+                # Done, so lets establish the size
+                h = y
+                w = x
+            return w, h
+
+        button_sizes = {
+            "large_label": None,
+            "large": None,
+            "small_label": None,
+            "small": None,
+            "tiny_label": None,
+            "tiny": None,
+        }
+        for panel in page.panels:
+            for button in panel.buttons:
+                # We calculate the space requirement for regular,
+                # small and tiny buttons, both with and without
+                # labels
+                for entry, bmp in zip(("large", "small", "tiny"), (button.bitmap_large, button.bitmap_small, button.bitmap_tiny)):
+                    s_entry = entry
+                    slabel = button.label if button.label and self.show_labels else ""
+                    bw, bh = calc(dc, s_entry, slabel, bmp)
+                    #  print (f"Entry: {s_entry}: {int(bw)}x{int(bh)} '{slabel}'")
+                    button.sizes[s_entry] = (bw, bh)
+                    if button_sizes[s_entry] is None:
+                        button_sizes[s_entry] = (bw, bh)
+                    else:
+                        button_sizes[s_entry] = (
+                            max(bw, button_sizes[s_entry][0]),
+                            max(bh, button_sizes[s_entry][1]),
+                        )
+
+                    s_entry =f"{entry}_label"
+                    slabel = ""
+                    bw, bh = calc(dc, s_entry, slabel, bmp)
+                    #  print (f"Entry: {s_entry}: {int(bw)}x{int(bh)} '{slabel}'")
+                    button.sizes[s_entry] = (bw, bh)
+                    if button_sizes[s_entry] is None:
+                        button_sizes[s_entry] = (bw, bh)
+                    else:
+                        button_sizes[s_entry] = (
+                            max(bw, button_sizes[s_entry][0]),
+                            max(bh, button_sizes[s_entry][1]),
+                        )
+
+    def choose_button_size(self, page):
+        is_horizontal = (self.orientation == self.RIBBON_ORIENTATION_HORIZONTAL) or (
+            self.parent.prefer_horizontal()
+            and self.orientation == self.RIBBON_ORIENTATION_AUTO
+        )
+        x, y, max_x, max_y = page.position
+        page_width = max_x - x
+        page_height = max_y - y
+        bestw = 0
+        besth = 0
+        main_dimension =  page_width if is_horizontal else page_height
+        secondary_dimension =  page_height if is_horizontal else page_width
+        x_extent = 0 if is_horizontal else page_width
+        y_extent = page_height if is_horizontal else 0
+        # We first check how many row / columns we would have for horizontal / vertical orientation.
+        # That determines the minimum amount of required space in the main direction
+        panel_buttons = []
+        total_buttons = 0
+        pcount = 0
+        for p in page.panels:
+            plen = len(p.buttons)
+            panel_buttons.append(plen)
+            total_buttons += plen
+            if plen:
+                pcount += 1
+        # Take gaps into account
+        main_dimension -= max(0, pcount-1) * self.between_panel_buffer
+        displayed = 0
+        for idx, panel in enumerate(page.panels):
+            if panel_buttons[idx] == 0:
+                continue
+            if displayed > 0:
+                if is_horizontal:
+                    x += self.between_panel_buffer
+                else:
+                    y += self.between_panel_buffer
+
+            psize = panel_buttons[idx] / total_buttons * main_dimension
+            if is_horizontal:
+                x_extent = psize
+            else:
+                y_extent = psize
+            panel.position = (x, y, x + x_extent, y + y_extent)
+            if is_horizontal:
+                x += psize
+            else:
+                y += psize
+            displayed += 1
+
+        return bestw, besth
 
     def preferred_button_size_for_page(self, dc, page):
+        self.calc_button_sizes(dc, page)
+        best_width, best_height = self.choose_button_size(page)
         x, y, max_x, max_y = page.position
         page_width = max_x - x
         page_height = max_y - y
@@ -1776,7 +1892,7 @@ class Art:
                 + 2 * self.panel_button_buffer
             )
 
-            panel.position = x, y, x + panel_width, y + panel_height
+            # panel.position = x, y, x + panel_width, y + panel_height
             # if self.parent.visible_pages() == 1:
             #     print(f"panel: {panel.position}")
             self.panel_layout(dc, panel)
