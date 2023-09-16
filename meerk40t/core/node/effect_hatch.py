@@ -54,7 +54,6 @@ class HatchEffectNode(Node, Stroked):
             self.hatch_angle = "0deg"
         if self.hatch_angle_delta is None:
             self.hatch_angle_delta = "0deg"
-        self.settings = kwargs
         self._operands = list()
         self._distance = None
         self._angle = None
@@ -85,7 +84,6 @@ class HatchEffectNode(Node, Stroked):
     @angle.setter
     def angle(self, value):
         self.hatch_angle = value
-        self.settings["hatch_angle"] = str(value)
         self.recalculate()
 
     @property
@@ -95,7 +93,6 @@ class HatchEffectNode(Node, Stroked):
     @delta.setter
     def delta(self, value):
         self.hatch_angle_delta = value
-        self.settings["hatch_angle_delta"] = str(value)
         self.recalculate()
 
     @property
@@ -105,7 +102,6 @@ class HatchEffectNode(Node, Stroked):
     @distance.setter
     def distance(self, value):
         self.hatch_distance = value
-        self.settings["hatch_distance"] = str(value)
         self.recalculate()
 
     def recalculate(self):
@@ -234,6 +230,8 @@ class HatchEffectNode(Node, Stroked):
 
     def drop(self, drag_node, modify=True):
         # Default routine for drag + drop for an op node - irrelevant for others...
+        if self.parent.type.startswith("op"):
+            return self.parent.drop(drag_node, modify=modify)
         if drag_node.type.startswith("elem"):
             # Dragging element onto operation adds that element to the op.
             if modify:

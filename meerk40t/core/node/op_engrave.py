@@ -53,10 +53,7 @@ class EngraveOpNode(Node, Parameters):
         ]  # comma is relevant
         # Is this op out of useful bounds?
         self.dangerous = False
-        if label is None:
-            self.label = "Engrave"
-        else:
-            self.label = label
+        self.label = "Engrave" if label is None else label
 
     def __repr__(self):
         return "EngraveOpNode()"
@@ -231,6 +228,13 @@ class EngraveOpNode(Node, Parameters):
         self.updated()
 
     def save(self, settings, section):
+        # Sync certain properties with self.settings
+        for attr in ("label", "lock", "id"):
+            if hasattr(self, attr) and attr in self.settings:
+                self.settings[attr] = getattr(self, attr)
+        if "hex_color" in self.settings:
+            self.settings["hex_color"] = self.color.hexa
+
         settings.write_persistent_attributes(section, self)
         settings.write_persistent(section, "hex_color", self.color.hexa)
         settings.write_persistent_dict(section, self.settings)
@@ -240,8 +244,18 @@ class EngraveOpNode(Node, Parameters):
             self.add_reference(element)
 
     def copy_children_as_real(self, copy_node):
+        context = self
         for node in copy_node.children:
-            self.add_node(copy(node.node))
+            if node.type.startswith("effect"):
+                n = copy(node)
+                context.add_node(n)
+                context = n
+        for node in copy_node.children:
+            if node.type == "reference":
+                context.add_node(copy(node.node))
+        for node in self.children:
+            if node.type.startswith("effect"):
+                node.effect = True
 
     def time_estimate(self):
         estimate = 0

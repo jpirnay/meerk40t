@@ -344,12 +344,16 @@ class TreePanel(wx.Panel):
     def on_update_op_labels_tree(self, origin, *args):
         self.shadow_tree.update_op_labels()
         opitem = self.context.elements.get(type="branch ops")._item
+        if opitem is None:
+            return
         tree = self.shadow_tree.wxtree
         tree.Expand(opitem)
 
     @signal_listener("updateelem_tree")
     def on_update_elem_tree(self, origin, *args):
         elitem = self.context.elements.get(type="branch elems")._item
+        if elitem is None:
+            return
         tree = self.shadow_tree.wxtree
         tree.Expand(elitem)
 
@@ -424,7 +428,6 @@ class ShadowTree:
             "op cut": icons8_laser_beam_20,
             "op image": icons8_image_20,
             "op raster": icons8_direction_20,
-            "op hatch": icons8_diagonal_20,
             "op dots": icons8_scatter_plot_20,
             "effect hatch": icons8_diagonal_20,
             "place current": icons8_home_location_20,
@@ -718,7 +721,11 @@ class ShadowTree:
         @param node:
         @return:
         """
+        if node is None:
+            return
         item = node._item
+        if item is None:
+            return
         self.check_validity(item)
         # Special treatment for branches, they only collapse fully,
         # if all their childrens were collapsed already
@@ -874,6 +881,8 @@ class ShadowTree:
         # print (f"Update warn was called, time since last: {this_call-self.last_call:.3f}sec")
         # self.last_call = this_call
         op_node = self.elements.get(type="branch ops")
+        if op_node is None:
+            return
         op_item = op_node._item
 
         status = ""
@@ -1113,6 +1122,9 @@ class ShadowTree:
         """
         parent = node.parent
         parent_item = parent._item
+        if parent_item is None:
+            # We are appending items in tree before registration.
+            return
         tree = self.wxtree
         if pos is None:
             node._item = tree.AppendItem(parent_item, self.name)
@@ -1725,11 +1737,6 @@ class ShadowTree:
                         ttip = _(
                             "This will engrave the elements contained,\n"
                             + "following the vector-paths of the data."
-                        )
-                    elif node.type == "op hatch":
-                        ttip = _(
-                            "This is an operation that will engrave a vector shape\n"
-                            + "filled with a set of vector-patterns like lines"
                         )
                     elif node.type == "op image":
                         ttip = _(

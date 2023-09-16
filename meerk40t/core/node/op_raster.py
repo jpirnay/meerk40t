@@ -284,6 +284,13 @@ class RasterOpNode(Node, Parameters):
         self.updated()
 
     def save(self, settings, section):
+        # Sync certain properties with self.settings
+        for attr in ("label", "lock", "id"):
+            if hasattr(self, attr) and attr in self.settings:
+                self.settings[attr] = getattr(self, attr)
+        if "hex_color" in self.settings:
+            self.settings["hex_color"] = self.color.hexa
+
         settings.write_persistent_attributes(section, self)
         settings.write_persistent(section, "hex_color", self.color.hexa)
         settings.write_persistent_dict(section, self.settings)
@@ -371,7 +378,7 @@ class RasterOpNode(Node, Parameters):
             # Calculate raster steps from DPI device context
             self.set_dirty_bounds()
 
-            step_x, step_y = context.device.dpi_to_steps(self.dpi, matrix=matrix)
+            step_x, step_y = context.device.dpi_to_steps(self.dpi)
             bounds = self.paint_bounds
             img_mx = Matrix.scale(step_x, step_y)
             data = list(self.flat())
