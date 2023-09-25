@@ -9,12 +9,8 @@ import argparse
 import os.path
 import sys
 
-from meerk40t.external_plugins import plugin as external_plugins
-from meerk40t.internal_plugins import plugin as internal_plugins
-from meerk40t.kernel import Kernel
-
 APPLICATION_NAME = "MeerK40t"
-APPLICATION_VERSION = "0.9.0013"
+APPLICATION_VERSION = "0.9.0014"
 
 if not getattr(sys, "frozen", False):
     # If .git directory does not exist we are running from a package like pypi
@@ -129,6 +125,10 @@ def run():
     ###################
     # END Old Python Code.
     ###################
+
+    from meerk40t.external_plugins import plugin as external_plugins
+    from meerk40t.internal_plugins import plugin as internal_plugins
+    from meerk40t.kernel import Kernel
 
     kernel = Kernel(
         APPLICATION_NAME,

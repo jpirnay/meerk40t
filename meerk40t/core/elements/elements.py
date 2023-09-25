@@ -38,6 +38,7 @@ def plugin(kernel, lifecycle=None):
             branches,
             clipboard,
             element_treeops,
+            files,
             geometry,
             grid,
             materials,
@@ -66,6 +67,7 @@ def plugin(kernel, lifecycle=None):
             grid.plugin,
             render.plugin,
             notes.plugin,
+            files.plugin,
             placements.plugin,
             offset_mk.plugin,
             offset_clpr.plugin,
@@ -393,6 +395,7 @@ def plugin(kernel, lifecycle=None):
             },
         ]
         kernel.register_choices("preferences", choices)
+
     elif lifecycle == "prestart":
         if hasattr(kernel.args, "input") and kernel.args.input is not None:
             # Load any input file
@@ -1190,12 +1193,10 @@ class Elemental(Service):
         op_tree = dict()
         for section in list(settings.derivable(name)):
             op_type = settings.read_persistent(str, section, "type")
-            # That should not happen, but it happens nonetheless...
-            # So recover gracefully
             try:
                 op = Node().create(type=op_type)
-            except (AttributeError, RuntimeError, ValueError) as err:
-                print(f"That should not happen, but ops contained: '{op_type}' [{err}]")
+            except ValueError:
+                # Attempted to create a non-boostrapped node type.
                 continue
             op.load(settings, section)
             op_tree[section] = op

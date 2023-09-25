@@ -37,6 +37,7 @@ from meerk40t.gui.toolwidgets.toollinetext import LineTextTool
 from meerk40t.gui.toolwidgets.toolmeasure import MeasureTool
 from meerk40t.gui.toolwidgets.toolnodeedit import EditTool
 from meerk40t.gui.toolwidgets.toolnodemove import NodeMoveTool
+from meerk40t.gui.toolwidgets.toolparameter import ParameterTool
 from meerk40t.gui.toolwidgets.toolplacement import PlacementTool
 from meerk40t.gui.toolwidgets.toolpoint import PointTool
 from meerk40t.gui.toolwidgets.toolpolygon import PolygonTool
@@ -100,6 +101,7 @@ class MeerK40tScenePanel(wx.Panel):
 
         self.tool_active = False
         self.modif_active = False
+        self.suppress_selection = False
         self._reference = None  # Reference Object
 
         # Stuff for magnet-lines
@@ -218,6 +220,7 @@ class MeerK40tScenePanel(wx.Panel):
         context.register("tool/edit", EditTool)
         context.register("tool/placement", PlacementTool)
         context.register("tool/nodemove", NodeMoveTool)
+        context.register("tool/parameter", ParameterTool)
 
         bsize_normal = STD_ICON_SIZE
 
@@ -372,11 +375,71 @@ class MeerK40tScenePanel(wx.Panel):
                     channel(t)
                 channel(_("-------"))
                 return
+            toolbar = context.lookup("ribbonbar/tools")
+            # Reset the edit toolbar
+            if toolbar is not None:
+                toolbar.remove_page("toolcontainer")
+                for pages in toolbar.pages:
+                    pages.visible = True
+                toolbar.validate_current_page()
+                toolbar.apply_enable_rules()
+                toolbar.modified()
             try:
                 if tool == "none":
-                    self.tool_container.set_tool(None)
+                    success, response = self.tool_container.set_tool(None)
+                    channel(response)
+                    if not success:
+                        return
                 else:
-                    self.tool_container.set_tool(tool.lower())
+                    success, response = self.tool_container.set_tool(tool.lower())
+                    channel(response)
+                    if not success:
+                        return
+                    # Reset the edit toolbar
+                    if toolbar is not None:
+                        toolbar.remove_page("toolcontainer")
+                        tool_values = list(context.find(f"button/tool_{tool}/.*"))
+                        # print(f"button/tool_{tool}/.*\n{tool_values}")
+                        if tool_values is not None and len(tool_values) > 0:
+                            for pages in toolbar.pages:
+                                pages.visible = False
+                            newpage = toolbar.add_page(
+                                "toolcontainer",
+                                "toolcontainer",
+                                "Select",
+                                None,
+                            )
+
+                            select_panel = toolbar.add_panel(
+                                "toolback",
+                                newpage,
+                                "toolback",
+                                "Select",
+                                None,
+                            )
+                            select_values = (
+                                (
+                                    context.lookup("button/tools/Scene"),
+                                    "button/tools/Scene",
+                                    "Select",
+                                ),
+                            )
+                            select_panel.set_buttons(select_values)
+
+                            tool_panel = toolbar.add_panel(
+                                "toolutil",
+                                newpage,
+                                "toolutil",
+                                "Tools",
+                                None,
+                            )
+                            tool_panel.set_buttons(tool_values)
+                            newpage.visible = True
+                            toolbar.validate_current_page()
+                            toolbar.apply_enable_rules()
+
+                        toolbar.modified()
+
             except (KeyError, AttributeError):
                 raise CommandSyntaxError
 
@@ -1263,6 +1326,12 @@ class MeerK40tScenePanel(wx.Panel):
         # self.context.signal("rebuild_tree")
         self.context.signal("refresh_tree", nodes)
         self.widget_scene.request_refresh()
+
+    @signal_listener("rebuild_tree")
+    def on_rebuild_tree(self, origin, *args):
+        self.widget_scene._signal_widget(
+            self.widget_scene.widget_root, "rebuild_tree", None
+        )
 
     @signal_listener("theme")
     def on_theme_change(self, origin, theme=None):
