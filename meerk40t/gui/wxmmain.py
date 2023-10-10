@@ -1,5 +1,6 @@
 import os
 import platform
+import datetime
 import sys
 from functools import partial
 
@@ -204,13 +205,37 @@ class MeerK40t(MWindow):
         self.Bind(wx.EVT_SIZE, self.on_size)
 
         self.CenterOnScreen()
-        self.update_check()
+        self.update_check_at_startup()
+        self.parametric_info = None
 
-    def update_check(self, silent=True):
+    def update_check_at_startup(self):
+        if self.context.update_check == 0:
+            return
         if self.context.update_check == 1:
-            self.context("check_for_updates --verbosity 2\n")
+            command = "check_for_updates --verbosity 2\n"
         elif self.context.update_check == 2:
-            self.context("check_for_updates --beta --verbosity 2\n")
+            command = "check_for_updates --beta --verbosity 2\n"
+        doit = True
+        lastdate = None
+        lastcall = self.context.setting(int, "last_update_check", None)
+        if lastcall is not None:
+            try:
+                lastdate = datetime.date.fromordinal(lastcall)
+            except ValueError:
+                pass
+        now = datetime.date.today()
+        if lastdate is not None:
+            delta = now - lastdate
+            # print (f"Delta: {delta.days}, lastdate={lastdate}, interval={self.context.update_frequency}")
+            if self.context.update_frequency == 2 and delta.days <= 6:
+                # Weekly
+                doit = False
+            elif self.context.update_frequency == 1 and delta.days <= 0:
+                # Daily
+                doit = False
+        if doit:
+            self.context.last_update_check = now.toordinal()
+            self.context(command)
 
     def setup_statusbar_panels(self, combine):
         # if not self.context.show_colorbar:
@@ -646,6 +671,21 @@ class MeerK40t(MWindow):
                 ),
                 "page": "Gui",
                 "section": "Appearance",
+                "signals": "rebuild_tree",
+            },
+            {
+                "attr": "tree_colored",
+                "object": self.context.root,
+                "default": True,
+                "type": bool,
+                "label": _("Color entries in tree"),
+                "tip": _(
+                    "Active: The tree entry will be displayed in the objects color\n"
+                    + "Inactive: Standard Colors are used"
+                ),
+                "page": "Gui",
+                "section": "Appearance",
+                "signals": "rebuild_tree",
             },
         ]
         context.kernel.register_choices("preferences", choices)
@@ -935,26 +975,6 @@ class MeerK40t(MWindow):
                 "page": "Gui",
                 # "hidden": True,
                 "section": "Misc.",
-            },
-        ]
-        context.kernel.register_choices("preferences", choices)
-        choices = [
-            {
-                "attr": "update_check",
-                "object": context.root,
-                "default": 1,
-                "type": int,
-                "label": _("Action"),
-                "style": "option",
-                "display": (
-                    _("No, thank you"),
-                    _("Look for major releases"),
-                    _("Look for major+beta releases"),
-                ),
-                "choices": (0, 1, 2),
-                "tip": _("Check for available updates on startup."),
-                "page": "Options",
-                "section": "Check for updates on startup",
             },
         ]
         context.kernel.register_choices("preferences", choices)
@@ -1908,8 +1928,17 @@ class MeerK40t(MWindow):
             ) as fileDialog:
                 if fileDialog.ShowModal() == wx.ID_CANCEL:
                     return  # the user changed their mind
+                idx = fileDialog.GetFilterIndex()
+                preferred_loader = None
+                if idx > 0:
+                    lidx = 0
+                    for loader, loader_name, sname in context.kernel.find("load"):
+                        lidx += 1
+                        if lidx == idx:
+                            preferred_loader = loader_name
+                            break
                 pathname = fileDialog.GetPath()
-                gui.clear_and_open(pathname)
+                gui.clear_and_open(pathname, preferred_loader=preferred_loader)
 
         @context.console_command("dialog_import", hidden=True)
         def import_dialog(**kwargs):
@@ -1922,8 +1951,17 @@ class MeerK40t(MWindow):
             ) as fileDialog:
                 if fileDialog.ShowModal() == wx.ID_CANCEL:
                     return  # the user changed their mind
+                idx = fileDialog.GetFilterIndex()
+                preferred_loader = None
+                if idx > 0:
+                    lidx = 0
+                    for loader, loader_name, sname in context.kernel.find("load"):
+                        lidx += 1
+                        if lidx == idx:
+                            preferred_loader = loader_name
+                            break
                 pathname = fileDialog.GetPath()
-                gui.load(pathname)
+                gui.load(pathname, preferred_loader)
 
         @context.console_option("quit", "q", action="store_true", type=bool)
         @context.console_command("dialog_save_as", hidden=True)
@@ -3257,9 +3295,21 @@ class MeerK40t(MWindow):
             _("Check for Updates"),
             _("Check whether a newer version of Meerk40t is available"),
         )
+
+        def update_check_from_menu():
+            if self.context.update_check == 1:
+                command = "check_for_updates --verbosity 3\n"
+            elif self.context.update_check == 2:
+                command = "check_for_updates --beta --verbosity 3\n"
+
+            self.context(command)
+            self.context.setting(int, "last_update_check", None)
+            now = datetime.date.today()
+            self.context.last_update_check = now.toordinal()
+
         self.Bind(
             wx.EVT_MENU,
-            lambda v: self.context("check_for_updates -beta --verbosity 3\n"),
+            lambda v: update_check_from_menu(),
             id=menuitem.GetId(),
         )
         menuitem = self.help_menu.Append(
@@ -3369,6 +3419,62 @@ class MeerK40t(MWindow):
             status = False
         self.set_needs_save_status(status)
 
+    @signal_listener("altered")
+    @signal_listener("modified")
+    @signal_listener("scaled")
+    def check_parametric_updates(self, origin, *args):
+        def getit(param, idx, default):
+            if idx >= len(param):
+                return default
+            return param[idx]
+
+        def read_information():
+            if self.parametric_info is None:
+                self.parametric_info = {}
+                for info, m, sname in self.context.kernel.find("element_update"):
+                    # function, path, shortname
+                    self.parametric_info[sname.lower()] = info
+
+        # Let's check for the need of parametric updates...
+        if len(args) == 0:
+            return
+        read_information()
+        data = args[0]
+        if not isinstance(data, (list, tuple)):
+            data = [args[0]]
+        for n in data:
+            if n is None:
+                continue
+            if not hasattr(n, "id"):
+                continue
+            if n.id is None:
+                continue
+            nid = n.id
+            for e in self.context.elements.elems():
+                if not hasattr(e, "functional_parameter"):
+                    continue
+                param = e.functional_parameter
+                if param is None:
+                    continue
+                ptype = getit(param, 0, None)
+                if ptype is None:
+                    continue
+                pid = getit(param, 2, None)
+                if pid != nid:
+                    continue
+                try:
+                    func_tuple = self.parametric_info[ptype.lower()]
+                    if not func_tuple[2]:  # No Autoupdate
+                        func_tuple = None
+                except IndexError:
+                    func_tuple = None
+                if func_tuple is not None:
+                    try:
+                        func = func_tuple[0]
+                        func(e)
+                    except IndexError:
+                        pass
+
     def validate_save(self):
         self.set_needs_save_status(False)
 
@@ -3396,9 +3502,14 @@ class MeerK40t(MWindow):
         dlg.ShowModal()
         dlg.Destroy()
 
+    @signal_listener("default_operations")
+    def on_def_ops(self, origin, *args):
+        self.main_statusbar.Signal("default_operations")
+
     @signal_listener("activate;device")
-    def on_device_active(self, origin, value):
-        # A new device might have new default oeprations...
+    def on_device_active(self, origin, *args):
+        # A new device might have new default operations...
+        self.context.elements.init_default_operations_nodes()
         self.main_statusbar.Signal("default_operations")
 
     @signal_listener("pipe;failing")
@@ -3561,8 +3672,17 @@ class MeerK40t(MWindow):
             fileDialog.SetFilename(default_file)
             if fileDialog.ShowModal() == wx.ID_CANCEL:
                 return  # the user changed their mind
+            idx = fileDialog.GetFilterIndex()
+            preferred_loader = None
+            if idx > 0:
+                lidx = 0
+                for loader, loader_name, sname in context.kernel.find("load"):
+                    lidx += 1
+                    if lidx == idx:
+                        preferred_loader = loader_name
+                        break
             pathname = fileDialog.GetPath()
-            self.load(pathname)
+            self.load(pathname, preferred_loader)
 
     def populate_recent_menu(self):
         if not hasattr(self, "recent_file_menu"):
@@ -3640,20 +3760,20 @@ class MeerK40t(MWindow):
                 break
         self.populate_recent_menu()
 
-    def clear_project(self):
+    def clear_project(self, ops_too=True):
         context = self.context
         kernel = context.kernel
         kernel.busyinfo.start(msg=_("Cleaning up..."))
         self.working_file = None
-        context.elements.clear_all()
+        context.elements.clear_all(ops_too=ops_too)
         self.context(".laserpath_clear\n")
         self.validate_save()
         kernel.busyinfo.end()
         self.context("tool none\n")
 
-    def clear_and_open(self, pathname):
-        self.clear_project()
-        if self.load(pathname):
+    def clear_and_open(self, pathname, preferred_loader=None):
+        self.clear_project(ops_too=False)
+        if self.load(pathname, preferred_loader):
             try:
                 if self.context.uniform_svg and pathname.lower().endswith("svg"):
                     # or (len(elements) > 0 and "meerK40t" in elements[0].values):
@@ -3663,7 +3783,7 @@ class MeerK40t(MWindow):
             except AttributeError:
                 pass
 
-    def load(self, pathname):
+    def load(self, pathname, preferred_loader=None):
         def unescaped(filename):
             OS_NAME = platform.system()
             if OS_NAME == "Windows":
@@ -3683,6 +3803,7 @@ class MeerK40t(MWindow):
                 pathname,
                 channel=self.context.channel("load"),
                 svg_ppi=self.context.elements.svg_ppi,
+                preferred_loader=preferred_loader,
             )
             kernel.busyinfo.end()
         except BadFileError as e:
@@ -3815,13 +3936,15 @@ class MeerK40t(MWindow):
                 amount=bbox[0] - x_delta, relative_length=self.context.device.view.width
             ).length_mm
             y0 = Length(
-                amount=bbox[1] - y_delta, relative_length=self.context.device.view.height
+                amount=bbox[1] - y_delta,
+                relative_length=self.context.device.view.height,
             ).length_mm
             x1 = Length(
                 amount=bbox[2] + x_delta, relative_length=self.context.device.view.width
             ).length_mm
             y1 = Length(
-                amount=bbox[3] + y_delta, relative_length=self.context.device.view.height
+                amount=bbox[3] + y_delta,
+                relative_length=self.context.device.view.height,
             ).length_mm
             self.context(f"scene focus -a {x0} {y0} {x1} {y1}\n")
 

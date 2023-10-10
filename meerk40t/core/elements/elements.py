@@ -125,7 +125,6 @@ def plugin(kernel, lifecycle=None):
         )
         kernel.register("format/blob", "{element_type} {data_type}:{label} @{length}")
         kernel.register("format/file", "{element_type} {filename}")
-        kernel.register("format/lasercode", "{element_type} {command_count}")
         kernel.register("format/cutcode", "{element_type}")
         kernel.register("format/branch ops", "{element_type} {loops}")
         kernel.register("format/branch elems", "{element_type}")
@@ -392,6 +391,29 @@ def plugin(kernel, lifecycle=None):
                 ),
                 "page": "Scene",
                 "section": "_90_Wordlist",
+            },
+        ]
+        kernel.register_choices("preferences", choices)
+        choices = [
+            {
+                "attr": "default_ops_display_mode",
+                "object": elements,
+                "default": 0,
+                "type": int,
+                "label": _("Statusbar display"),
+                "style": "option",
+                "display": (
+                    _("As in operations tree"),
+                    _("Group types together (CC EE RR II)"),
+                    _("Matching (CERI CERI)"),
+                ),
+                "choices": (0, 1, 2),
+                "tip": _(
+                    "Choose if and how you want to group together / display the default operations at the bottom of the screen"
+                ),
+                "page": "Classification",
+                "section": "_95_Default Operations",
+                "signals": "default_operations",
             },
         ]
         kernel.register_choices("preferences", choices)
@@ -1713,12 +1735,13 @@ class Elemental(Service):
         if fast:
             self.signal("rebuild_tree")
 
-    def clear_all(self):
+    def clear_all(self, ops_too=True):
         fast = True
         self.set_start_time("clear_all")
         with self.static("clear_all"):
             self.clear_elements(fast=fast)
-            self.clear_operations(fast=fast)
+            if ops_too:
+                self.clear_operations(fast=fast)
             self.clear_files()
             self.clear_note()
             self.clear_regmarks(fast=fast)
@@ -3325,7 +3348,9 @@ class Elemental(Service):
         # which aren't supported by mk yet, we could ask a program
         # to convert these elements into supported artifacts
         # This may change the fileformat (and filename)
-
+        preferred_loader = None
+        if "preferred_loader" in kwargs:
+            preferred_loader = kwargs["preferred_loader"]
         fn_name, fn_extension = os.path.splitext(filename_to_process)
         if fn_extension:
             preproc = self.lookup(f"preprocessor/{fn_extension}")
@@ -3335,7 +3360,11 @@ class Elemental(Service):
                 # print (f"Gave: {pathname}, received: {filename_to_process}")
         for loader, loader_name, sname in kernel.find("load"):
             for description, extensions, mimetype in loader.load_types():
+                valid = False
                 if str(filename_to_process).lower().endswith(extensions):
+                    if preferred_loader is None or (preferred_loader == loader_name):
+                        valid = True
+                if valid:
                     self.set_start_time("load")
                     self.set_start_time("full_load")
                     with self.static("load elements"):
