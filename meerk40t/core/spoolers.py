@@ -7,7 +7,7 @@ from meerk40t.core.units import Length
 from meerk40t.kernel import CommandSyntaxError
 
 """
-This module defines a set of commands that usually send a single easy command to the spooler. Basic jogging, home, 
+This module defines a set of commands that usually send a single easy command to the spooler. Basic jogging, home,
 unlock rail commands. And it provides the the spooler class which should be provided by each driver.
 
 Spoolers process different jobs in order. A spooler job can be anything, but usually is a LaserJob which is a simple
@@ -622,6 +622,7 @@ class Spooler:
     def clear_queue(self):
         with self._lock:
             for element in self._queue:
+                element.stop()
                 loop = getattr(element, "loops_executed", 0)
                 total = getattr(element, "loops", 0)
                 if isinf(total):
@@ -649,7 +650,6 @@ class Spooler:
                     }
                 )
                 self.context.signal("spooler;completed")
-                element.stop()
             self._queue.clear()
             self._lock.notify()
         self.context.signal("spooler;queue", len(self._queue))
