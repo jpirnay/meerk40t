@@ -48,6 +48,7 @@ class RasterOpNode(Node, Parameters):
         self.coolant = 0  # Nothing to do (0/None = keep, 1=turn on, 2=turn off)
         self.stopop = False
         self.label = "Raster"
+        self.cutoff_threshold = 0
 
         # To which attributes do the classification color check respond
         # Can be extended / reduced by add_color_attribute / remove_color_attribute
@@ -57,6 +58,15 @@ class RasterOpNode(Node, Parameters):
         self._formatter = (
             "{enabled}{pass}{element_type}{direction}{speed}mm/s @{power} {color}"
         )
+        if isinstance(self.cutoff_threshold, str):
+            s = self.cutoff_threshold
+            if s.endswith("%"):
+                s = s[:-1]
+            try:
+                self.cutoff_threshold = float(s)
+            except ValueError:
+                self.cutoff_threshold = 0
+
 
     def __repr__(self):
         return "RasterOp()"
@@ -109,8 +119,10 @@ class RasterOpNode(Node, Parameters):
         default_map.update(self.settings)
         default_map["color"] = self.color.hexrgb if self.color is not None else ""
         default_map["overscan"] = f"±{self.overscan}"
+        default_map["shift_lines"] = f"±{self.shift_lines}"
         default_map["percent"] = "100%"
         default_map["ppi"] = "default"
+        default_map["cutoff"] = "-" if self.cutoff_threshold is None else str(self.cutoff_threshold)
         if self.power is not None:
             default_map["percent"] = f"{self.power / 10.0:.0f}%"
             default_map["ppi"] = f"{self.power:.0f}"
@@ -357,10 +369,19 @@ class RasterOpNode(Node, Parameters):
         self.settings["native_mm"] = native_mm
         self.settings["native_speed"] = self.speed * native_mm
         self.settings["native_rapid_speed"] = self.rapid_speed * native_mm
-
-        overscan = float(Length(self.settings.get("overscan", "1mm")))
+        try:
+            overscan = float(Length(self.overscan))
+        except ValueError:
+            overscan = 0
+        try:
+            shift_lines = float(Length(self.shift_lines))
+        except ValueError:
+            shift_lines = 0
         transformed_vector = matrix.transform_vector([0, overscan])
         self.overscan = abs(complex(transformed_vector[0], transformed_vector[1]))
+        transformed_vector = matrix.transform_vector([0, shift_lines])
+        self.shift_lines = abs(complex(transformed_vector[0], transformed_vector[1]))
+
         if len(self.children) == 0:
             return
 
@@ -410,17 +431,20 @@ class RasterOpNode(Node, Parameters):
             image_node.process_image()
 
         if matrix.value_scale_y() < 0:
+            self.raster_preference_top = not self.raster_preference_top
             # Y is negative scale, flip raster_direction if needed
             if self.raster_direction == 0:
                 self.raster_direction = 1
             elif self.raster_direction == 1:
                 self.raster_direction = 0
         if matrix.value_scale_x() < 0:
+            self.raster_preference_left = not self.raster_preference_left
             # X is negative scale, flip raster_direction if needed
             if self.raster_direction == 2:
                 self.raster_direction = 3
             elif self.raster_direction == 3:
                 self.raster_direction = 2
+                self.raster_preference_top = False
 
         commands.append(make_image)
 
@@ -441,12 +465,15 @@ class RasterOpNode(Node, Parameters):
         if not isinstance(overscan, float):
             overscan = float(Length(overscan))
         settings["overscan"] = overscan
+        shift_lines = self.shift_lines
+        if not isinstance(shift_lines, float):
+            shift_lines = float(Length(shift_lines))
 
         # Set variables by direction
         direction = self.raster_direction
         horizontal = False
-        start_minimum_x = False
-        start_minimum_y = False
+        start_minimum_y = self.raster_preference_top > 0
+        start_minimum_x = self.raster_preference_left > 0
         if direction == 0 or direction == 4:
             horizontal = True
             start_minimum_y = True
@@ -505,6 +532,15 @@ class RasterOpNode(Node, Parameters):
                     (max_x, min_y),
                 )
             )
+            image_filter = None
+            if self.cutoff_threshold: # Given as percentage
+                threshold = self.cutoff_threshold / 100.0
+                def image_filter(pixel):
+                    # This threshold filter function is defined to set image pixels(white=255, black=0)
+                    # to a brightness value (white=0, black=1), additionally we apply a lowp pass filter
+                    # that sets all pixels to 0 if they are below the threshold.
+                    value = (255 - pixel) / 255.0
+                    return 0 if value <= threshold else value
 
             # Create Cut Object
             cut = RasterCut(
@@ -519,8 +555,10 @@ class RasterOpNode(Node, Parameters):
                 start_minimum_y=start_minimum_y,
                 start_minimum_x=start_minimum_x,
                 overscan=overscan,
+                shift_lines=shift_lines,
                 settings=settings,
                 passes=passes,
+                post_filter=image_filter,
             )
             cut.path = path
             cut.original_op = self.type
@@ -549,6 +587,7 @@ class RasterOpNode(Node, Parameters):
                     start_minimum_y=start_minimum_y,
                     start_minimum_x=start_minimum_x,
                     overscan=overscan,
+                    shift_lines=shift_lines,
                     settings=settings,
                     passes=passes,
                 )
