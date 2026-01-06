@@ -468,7 +468,7 @@ class MeerK40t(MWindow):
         self.Bind(wx.EVT_POWER_SUSPENDING, self.on_power_suspend)
         self.Bind(wx.EVT_POWER_RESUME, self.on_power_resume)
 
-    def on_power_suspend(self, event):
+    def on_power_suspend(self, event=None):
         # Do we have an active job? If yes, we would like to pause it
         if self.context.setting(bool, "pause_on_suspend", True):
             channel = self.context.kernel.channels["console"]
@@ -492,7 +492,7 @@ class MeerK40t(MWindow):
         if event is not None:
             event.Skip()
 
-    def on_power_resume(self, event):
+    def on_power_resume(self, event=None):
         event.Skip()  # Continue processing the event
         self.context.signal("system_resumed")
 
@@ -587,7 +587,7 @@ class MeerK40t(MWindow):
         elif minimized:
             self.Iconize()
 
-    def on_active(self, event):
+    def on_active(self, event=None):
         if event.GetActive():
             self.context.signal("scene_activated")
         else:
@@ -2700,7 +2700,6 @@ class MeerK40t(MWindow):
             },
         )
 
-
         # Default Size for normal buttons
         # buttonsize = STD_ICON_SIZE
         kernel.register(
@@ -2718,7 +2717,6 @@ class MeerK40t(MWindow):
                 > 1,
             },
         )
-
 
         def part_of_group():
             for node in list(kernel.elements.elems(emphasized=True)):
@@ -3006,6 +3004,9 @@ class MeerK40t(MWindow):
         )
 
     def window_menu(self):
+        return False
+
+    def network_menu(self):
         return False
 
     def __set_commands(self):
@@ -3613,12 +3614,12 @@ class MeerK40t(MWindow):
             paneinfo,
         )
 
-    def on_pane_active(self, event):
+    def on_pane_active(self, event=None):
         pane = event.GetPane()
         if hasattr(pane.window, "active"):
             pane.window.active()
 
-    def on_pane_closed(self, event):
+    def on_pane_closed(self, event=None):
         pane = event.GetPane()
         if pane.IsShown():
             if hasattr(pane.window, "pane_hide"):
@@ -3946,6 +3947,7 @@ class MeerK40t(MWindow):
         self.__set_pane_menu()
         self.__set_tool_menu()
         self.__set_window_menu()
+        self.__set_network_menu()
         self.__set_help_menu()
         self.add_language_menu()
 
@@ -4062,53 +4064,73 @@ class MeerK40t(MWindow):
         # FILE MENU
         # ==========
 
-        menu_item = self.file_menu.Append(
-            wx.ID_NEW, _("&New\tCtrl-N"), _("Clear Operations, Elements and Notes")
-        )
-        self.Bind(wx.EVT_MENU, self.on_click_new, id=wx.ID_NEW)
-
-        self.file_menu.Append(
-            wx.ID_OPEN,
-            _("&Open Project\tCtrl-O"),
-            _("Clear existing elements and notes and open a new file")
-            + _(" (keep the Shift-Key pressed to be asked for a target location)"),
-        )
-        self.Bind(wx.EVT_MENU, self.on_click_open, id=wx.ID_OPEN)
-
+        # Recent submenu (only when not a macOS frozen app)
         if not getattr(sys, "frozen", False) or platform.system() != "Darwin":
             self.recent_file_menu = wx.Menu()
             self.recent_file_menu_item = self.file_menu.AppendSubMenu(
                 self.recent_file_menu, _("&Recent")
             )
-        menu_item = self.file_menu.Append(
-            wx.ID_ANY,
-            _("&Import File"),
-            _("Import another file into the same project")
-            + _(" (keep the Shift-Key pressed to be asked for a target location)"),
-        )
-        self.Bind(wx.EVT_MENU, self.on_click_import, id=menu_item.GetId())
-        self.file_menu.AppendSeparator()
-        menu_item = self.file_menu.Append(
-            wx.ID_SAVE,
-            _("&Save\tCtrl-S"),
-            _("Save the project as an SVG file (overwriting any existing file)"),
-        )
-        self.Bind(wx.EVT_MENU, self.on_click_save, id=wx.ID_SAVE)
-        menu_item = self.file_menu.Append(
-            wx.ID_SAVEAS,
-            _("Save &As\tCtrl-Shift-S"),
-            _("Save the project in a new SVG file"),
-        )
-        self.Bind(wx.EVT_MENU, self.on_click_save_as, id=wx.ID_SAVEAS)
-        self.file_menu.AppendSeparator()
-        if platform.system() == "Darwin":
-            menu_item = self.file_menu.Append(
-                wx.ID_CLOSE, _("&Close Window\tCtrl-W"), _("Close Meerk40t")
-            )
-            self.Bind(wx.EVT_MENU, self.on_click_close, id=menu_item.GetId())
 
-        menu_item = self.file_menu.Append(wx.ID_EXIT, _("E&xit"), _("Close Meerk40t"))
-        self.Bind(wx.EVT_MENU, self.on_click_exit, id=menu_item.GetId())
+        choices = [
+            {
+                "label": _("&New\tCtrl-N"),
+                "help": _("Clear Operations, Elements and Notes"),
+                "action": self.on_click_new,
+                "id": wx.ID_NEW,
+            },
+            {
+                "label": _("&Open Project\tCtrl-O"),
+                "help": _("Clear existing elements and notes and open a new file")
+                + _(" (keep the Shift-Key pressed to be asked for a target location)"),
+                "action": self.on_click_open,
+                "id": wx.ID_OPEN,
+            },
+            {
+                "label": _("&Import File"),
+                "help": _("Import another file into the same project")
+                + _(" (keep the Shift-Key pressed to be asked for a target location)"),
+                "action": self.on_click_import,
+            },
+            {
+                "label": "",
+            },
+            {
+                "label": _("&Save\tCtrl-S"),
+                "help": _(
+                    "Save the project as an SVG file (overwriting any existing file)"
+                ),
+                "action": self.on_click_save,
+                "id": wx.ID_SAVE,
+            },
+            {
+                "label": _("Save &As\tCtrl-Shift-S"),
+                "help": _("Save the project in a new SVG file"),
+                "action": self.on_click_save_as,
+                "id": wx.ID_SAVEAS,
+            },
+        ]
+
+        # macOS-only Close Window entry
+        if platform.system() == "Darwin":
+            choices.append(
+                {
+                    "label": _("&Close Window\tCtrl-W"),
+                    "help": _("Close Meerk40t"),
+                    "action": self.on_click_close,
+                    "id": wx.ID_CLOSE,
+                }
+            )
+
+        choices.append(
+            {
+                "label": _("E&xit"),
+                "help": _("Close Meerk40t"),
+                "action": self.on_click_exit,
+                "id": wx.ID_EXIT,
+            }
+        )
+
+        self._create_menu_from_choices(self.file_menu, choices)
         self.main_menubar.Append(self.file_menu, _("File"))
 
     def _update_status_menu(self, menu, choices, *args):
@@ -4625,6 +4647,122 @@ class MeerK40t(MWindow):
             wt_menu = wx.Menu()
             self.main_menubar.Append(wt_menu, _("Window"))
 
+    def __set_network_menu(self):
+        # ============
+        # NETWORK MENU
+        # ============
+        def run_command(command):
+            def handler(event):
+                self.context(f"{command}\n")
+                # Status may change, so we need to repopulate the menu
+                populate()
+
+            return handler
+
+        def populate():
+            default_telnet_port = self.context.setting(int, "default_telnet_port", 23)
+            default_webserver_port = self.context.setting(
+                int, "default_webserver_port", 8080
+            )
+
+            label = _("Network")
+            self.network_menu = wx.Menu()
+            index = self.main_menubar.FindMenu(label)
+            if index != -1:
+                self.main_menubar.Replace(index, self.network_menu, label)
+            else:
+                self.main_menubar.Append(self.network_menu, label)
+
+            # Define network services in a concise data-driven way to avoid repetition
+            services = [
+                {
+                    "id": "web-server",
+                    "type": "root",
+                    "start_label": _("Start &Webserver on port {port}"),
+                    "start_tip": _(
+                        "Starts a webserver instance to control MeerK40t from a webbrowser"
+                    ),
+                    "start_cmd": lambda: f"webserver -p {default_webserver_port}",
+                    "stop_label": _("Stop &Webserver"),
+                    "stop_tip": _("Stops the running webserver instance"),
+                    "stop_cmd": "webserver -q",
+                },
+                {
+                    "id": "console-server",
+                    "type": "root",
+                    "start_label": _("Start &Telnet on port {port}"),
+                    "start_tip": _(
+                        "Starts a telnet instance to control MeerK40t from a terminal"
+                    ),
+                    "start_cmd": lambda: f"consoleserver -p {default_telnet_port}",
+                    "stop_label": _("Stop &Telnet"),
+                    "stop_tip": _("Stops the running consoleserver instance"),
+                    "stop_cmd": "consoleserver -q",
+                    "append_separator_after": True,
+                },
+                {
+                    "id": "ruidacontrol",
+                    "type": "device",
+                    "start_label": _("Start &Ruida-Server"),
+                    "start_tip": _(
+                        "Start ruidacontrol for interaction with 3rd party software"
+                    ),
+                    "start_cmd": "ruidacontrol",
+                    "stop_label": _("Stop &Ruida-Server"),
+                    "stop_tip": _("Stop the running ruidacontrol instance"),
+                    "stop_cmd": "ruidacontrol -q",
+                },
+                {
+                    "id": "grblcontrol",
+                    "type": "device",
+                    "start_label": _("Start &GRBL-Server"),
+                    "start_tip": _(
+                        "Start grblcontrol for interaction with 3rd party software"
+                    ),
+                    "start_cmd": "grblcontrol",
+                    "stop_label": _("Stop &GRBL-Server"),
+                    "stop_tip": _("Stop the running grblcontrol instance"),
+                    "stop_cmd": "grblcontrol -q",
+                },
+            ]
+
+            for svc in services:
+                if svc["type"] == "root":
+                    running = self.context.kernel.root.get_open(svc["id"]) is not None
+                else:
+                    running = self.context.kernel.device.lookup(svc["id"]) is not None
+
+                if running:
+                    menuitem = self.network_menu.Append(
+                        wx.ID_ANY, svc["stop_label"], svc.get("stop_tip", "")
+                    )
+                    self.Bind(
+                        wx.EVT_MENU, run_command(svc["stop_cmd"]), id=menuitem.GetId()
+                    )
+                else:
+                    # Some commands are defined as callables to include runtime values like ports
+                    start_cmd = (
+                        svc["start_cmd"]()
+                        if callable(svc["start_cmd"])
+                        else svc["start_cmd"]
+                    )
+                    start_label = svc["start_label"].format(
+                        port=(
+                            default_webserver_port
+                            if svc["id"] == "web-server"
+                            else default_telnet_port
+                        )
+                    )
+                    menuitem = self.network_menu.Append(
+                        wx.ID_ANY, start_label, svc.get("start_tip", "")
+                    )
+                    self.Bind(wx.EVT_MENU, run_command(start_cmd), id=menuitem.GetId())
+
+                if svc.get("append_separator_after"):
+                    self.network_menu.AppendSeparator()
+
+        populate()
+
     def __set_help_menu(self):
         # ==========
         # HELP MENU
@@ -4983,11 +5121,15 @@ class MeerK40t(MWindow):
                 return True  # VETO
         for job in self.context.device.spooler.queue:
             if job.is_running():
-                print(f"{job.label} was still running, stopping...")
+                print(
+                    f"{job.label if hasattr(job, 'label') else 'Unknown Job'} was still running, stopping..."
+                )
                 try:
                     job.stop()
                 except Exception as e:
-                    print(f"Error stopping job {job.label}: {e}")
+                    print(
+                        f"Error stopping job {job.label if hasattr(job, 'label') else 'Unknown Job'}: {e}"
+                    )
         return False
 
     def window_close(self):
@@ -5168,7 +5310,7 @@ class MeerK40t(MWindow):
     @signal_listener("pipe;usb_status")
     def on_usb_state_text(self, origin, value):
         self.main_statusbar.SetStatusText(
-            _("Usb: {index}").format(index=value),
+            _("Laser: {index}").format(index=value),
             1,
         )
 
@@ -5382,7 +5524,11 @@ class MeerK40t(MWindow):
                 _("Clear Recent"),
                 _("Delete the list of recent projects"),
             )
-            self.Bind(wx.EVT_MENU, lambda e: self.clear_recent(), id=item_clear_history.GetId())
+            self.Bind(
+                wx.EVT_MENU,
+                lambda e: self.clear_recent(),
+                id=item_clear_history.GetId(),
+            )
         else:
             self.recent_file_menu_item.Enable(False)
 
@@ -5656,7 +5802,7 @@ class MeerK40t(MWindow):
                 return True
             return False
 
-    def on_drop_file(self, event):
+    def on_drop_file(self, event=None):
         """
         Drop file handler
 
@@ -5682,7 +5828,7 @@ class MeerK40t(MWindow):
             dlg.ShowModal()
             dlg.Destroy()
 
-    def on_size(self, event):
+    def on_size(self, event=None):
         if self.context is None:
             return
         self.Layout()
@@ -5690,7 +5836,7 @@ class MeerK40t(MWindow):
             zl = self.context.zoom_margin
             self.context(f"scene focus -{zl}% -{zl}% {100 + zl}% {100 + zl}%\n")
 
-    def on_focus_lost(self, event):
+    def on_focus_lost(self, event=None):
         self.context("-laser\nend\n")
         # event.Skip()
 
@@ -5711,7 +5857,7 @@ class MeerK40t(MWindow):
     def on_click_pause(self, event=None):
         self.context("pause\n")
 
-    def on_click_save(self, event):
+    def on_click_save(self, event=None):
         self.context(".dialog_save\n")
         self.context(".tool none\n")
 
@@ -5818,7 +5964,7 @@ class MeerK40t(MWindow):
             print("DoGiveHelp called but still no help text")
         self.DoGiveHelp_called = True
 
-    def on_menu_open(self, event):
+    def on_menu_open(self, event=None):
         def undo_label():
             s = _("&Undo\tCtrl-Z")
             t = self.context.elements.undo.undo_string()
@@ -5855,13 +6001,13 @@ class MeerK40t(MWindow):
             if title:
                 self.update_statusbar(title + "...")
 
-    def on_menu_close(self, event):
+    def on_menu_close(self, event=None):
         self.menus_open -= 1
         if self.menus_open <= 0:
             self.top_menu = None
         self.status_update()
 
-    def on_menu_highlight(self, event):
+    def on_menu_highlight(self, event=None):
         try:
             menuid = event.GetId()
             menu = event.GetMenu()

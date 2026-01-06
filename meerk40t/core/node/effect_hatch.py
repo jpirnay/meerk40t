@@ -133,6 +133,7 @@ class HatchEffectNode(Node, Suppressable):
                 hatchangledelta,
                 loops,
                 unidirectional,
+                include_outlines,
             ) = pattern
             if typeinfo == self.type:
                 self.hatch_type = hatchtype
@@ -141,6 +142,7 @@ class HatchEffectNode(Node, Suppressable):
                 self.hatch_angle_delta = hatchangledelta
                 self.loops = loops
                 self.unidirectional = unidirectional == "1"
+                self.include_outlines = str(include_outlines).strip().lower() in ("1", "true", "yes", "on")
                 self.recalculate()
         except ValueError:
             pass
@@ -257,23 +259,6 @@ class HatchEffectNode(Node, Suppressable):
 
         self.set_dirty_bounds()
 
-    # def bbox(self, transformed=True, with_stroke=False):
-    #     geometry = self.as_geometry()
-    #     if transformed:
-    #         bounds = geometry.bbox(mx=self.matrix)
-    #     else:
-    #         bounds = geometry.bbox()
-    #     xmin, ymin, xmax, ymax = bounds
-    #     if with_stroke:
-    #         delta = float(self.implied_stroke_width) / 2.0
-    #         return (
-    #             xmin - delta,
-    #             ymin - delta,
-    #             xmax + delta,
-    #             ymax + delta,
-    #         )
-    #     return xmin, ymin, xmax, ymax
-
     def default_map(self, default_map=None):
         default_map = super().default_map(default_map=default_map)
         default_map["element_type"] = "Hatch"
@@ -367,24 +352,33 @@ class HatchEffectNode(Node, Suppressable):
             self.recalculate()
         for p in range(self.loops):
             # Choose algorithm based on selection and complexity
-            if self._should_use_direct_grid():
+            if self.hatch_type == "spiral":
                 path.append(
-                    self._direct_grid_hatch(
-                        outlines,
-                        distance=self._distance,
-                        angle=self._angle + p * self._angle_delta,
-                        unidirectional=self.unidirectional,
+                    Geomstr.hatch_spiral(
+                        outlines, 
+                        angle=self._angle + p * self._angle_delta, 
+                        distance=self._distance
                     )
                 )
             else:
-                path.append(
-                    Geomstr.hatch(
-                        outlines,
-                        distance=self._distance,
-                        angle=self._angle + p * self._angle_delta,
-                        unidirectional=self.unidirectional,
+                if self._should_use_direct_grid():
+                    path.append(
+                        self._direct_grid_hatch(
+                            outlines,
+                            distance=self._distance,
+                            angle=self._angle + p * self._angle_delta,
+                            unidirectional=self.unidirectional,
+                        )
                     )
-                )
+                else:
+                    path.append(
+                        Geomstr.hatch(
+                            outlines,
+                            distance=self._distance,
+                            angle=self._angle + p * self._angle_delta,
+                            unidirectional=self.unidirectional,
+                        )
+                    )
         # Mark hatch effect geometry to prevent stitching
         # Hatch lines are closely-spaced parallel lines that should not be stitched together
         path.no_stitch = True
@@ -413,17 +407,9 @@ class HatchEffectNode(Node, Suppressable):
     ) -> Geomstr:
         """Use the optimized Direct Grid Fill algorithm for hatching."""
         try:
-            # Import our optimized algorithm
-            import os
-            import sys
-
-            sys.path.insert(
-                0, os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            )
-            from direct_grid_fill import direct_grid_fill
-
-            return direct_grid_fill(outlines, angle, distance, unidirectional)
-        except ImportError:
+            # Use Geomstr's built-in Direct Grid algorithm
+            return Geomstr.hatch_direct_grid(outlines, angle, distance, unidirectional)
+        except AttributeError:
             # Fallback to original algorithm if direct_grid_fill not available
             return Geomstr.hatch(
                 outlines, distance=distance, angle=angle, unidirectional=unidirectional
@@ -446,16 +432,23 @@ class HatchEffectNode(Node, Suppressable):
         ]
         if self._distance is None:
             self.recalculate()
-        for p in range(self.loops):
-            for o in outlines:
-                if self.include_outlines:
-                    yield o
-                yield Geomstr.hatch(
-                    o,
-                    distance=self._distance,
-                    angle=self._angle + p * self._angle_delta,
-                    unidirectional=self.unidirectional,
-                )
+        for o in outlines:
+            if self.include_outlines:
+                yield o
+            for p in range(self.loops):
+                if self.hatch_type == "spiral":
+                    yield Geomstr.hatch_spiral(
+                        o,
+                        angle=self._angle + p * self._angle_delta,
+                        distance=self._distance,
+                    )
+                else:
+                    yield Geomstr.hatch(
+                        o,
+                        distance=self._distance,
+                        angle=self._angle + p * self._angle_delta,
+                        unidirectional=self.unidirectional,
+                    )
 
     def set_interim(self):
         self.empty_cache()
