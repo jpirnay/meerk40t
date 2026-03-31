@@ -3,11 +3,11 @@ from wx import aui
 
 from meerk40t.core.elements.element_types import elem_nodes, op_nodes
 
-from ..core.units import Length
-from ..kernel import signal_listener
-from ..svgelements import Color
-from .basicops import BasicOpPanel
-from .icons import (
+from meerk40t.core.units import Length
+from meerk40t.kernel import signal_listener
+from meerk40t.svgelements import Color
+from meerk40t.gui.basicops import BasicOpPanel
+from meerk40t.gui.icons import (
     icon_bell,
     icon_bmap_text,
     icon_canvas,
@@ -42,9 +42,9 @@ from .icons import (
     icons8_lock,
     icons8_r_white,
 )
-from .laserrender import DRAW_MODE_ICONS, LaserRender, swizzlecolor
-from .mwindow import MWindow
-from .wxutils import (
+from meerk40t.gui.laserrender import DRAW_MODE_ICONS, LaserRender, swizzlecolor
+from meerk40t.gui.mwindow import MWindow
+from meerk40t.gui.wxutils import (
     StaticBoxSizer,
     create_menu,
     dip_size,
@@ -483,35 +483,65 @@ class TreePanel(wx.Panel):
         @param args:
         @return:
         """
+        if self.shadow_tree.wxtree is None:
+            return
         self.shadow_tree.cache_hits = 0
         self.shadow_tree.cache_requests = 0
-        self.shadow_tree.refresh_tree(source=f"signal_{origin}")
-        if nodes is not None:
-            if isinstance(nodes, (tuple, list)):
-                # All Standard nodes first
-                for node in nodes:
-                    if (
-                        node is not None
-                        and node._item is not None
-                        and node.type.startswith("elem ")
-                    ):
-                        self.shadow_tree.set_icon(node, force=True)
-                # Then all others
-                for node in nodes:
-                    if (
-                        node is not None
-                        and node._item is not None
-                        and not node.type.startswith("elem ")
-                    ):
-                        self.shadow_tree.set_icon(node, force=True)
-                # Show the first node, but if that's the root node then ignore stuff
-                node = nodes[0] if len(nodes) > 0 else None
-            else:
-                node = nodes
-                self.shadow_tree.set_icon(node, force=True)
+        if nodes is None:
+            self.shadow_tree.refresh_tree(source=f"signal_{origin}")
+
+            return
+
+        if isinstance(nodes, (tuple, list)):
+            if len(nodes) == 0:
+                self.shadow_tree.refresh_tree(source=f"signal_{origin}")
+                return
+            # full_refresh = len(nodes) > 250
+            # if full_refresh:
+            #     self.shadow_tree.refresh_tree(source=f"signal_{origin}")
+            elem_nodes = []
+            other_nodes = []
+            for node in nodes:
+                if node is None or node._item is None:
+                    continue
+                if node.type.startswith("elem "):
+                    elem_nodes.append(node)
+                else:
+                    other_nodes.append(node)
+            self.shadow_tree.wxtree.Freeze()
+            try:
+                for node in elem_nodes:
+                    self.shadow_tree.set_icon(node, force=True)
+                    self.shadow_tree.set_enhancements(node)
+                for node in other_nodes:
+                    self.shadow_tree.set_icon(node, force=True)
+                    self.shadow_tree.set_enhancements(node)
+            finally:
+                self.shadow_tree.wxtree.Thaw()
             rootitem = self.shadow_tree.wxtree.GetRootItem()
-            if node is not None and node._item is not None and node._item != rootitem:
-                self.shadow_tree.wxtree.EnsureVisible(node._item)
+            visible_node = None
+            for node in nodes:
+                if node is None or node._item is None or node._item == rootitem:
+                    continue
+                if getattr(node, "selected", False):
+                    visible_node = node
+                    break
+                if visible_node is None:
+                    visible_node = node
+            if visible_node is not None:
+                self.shadow_tree.wxtree.EnsureVisible(visible_node._item)
+        else:
+            node = nodes
+            if node is not None and node._item is not None:
+                self.shadow_tree.wxtree.Freeze()
+                try:
+                    self.shadow_tree.set_icon(node, force=True)
+                    self.shadow_tree.set_enhancements(node)
+                finally:
+                    self.shadow_tree.wxtree.Thaw()
+                rootitem = self.shadow_tree.wxtree.GetRootItem()
+                if node._item is not None and node._item != rootitem:
+                    self.shadow_tree.wxtree.EnsureVisible(node._item)
 
     @signal_listener("freeze_tree")
     def on_freeze_tree_signal(self, origin, status=None, *args):
@@ -651,6 +681,7 @@ class ShadowTree:
         self.cache_requests = 0
         self.color_cache = {}
         self.formatter_cache = {}
+        self._tree_translation_cache = {}
         self._too_big = False
         self.refresh_tree_counter = 0
         self._last_hover_item = None
@@ -1752,6 +1783,7 @@ class ShadowTree:
 
     def reset_formatter_cache(self):
         self.formatter_cache.clear()
+        self._tree_translation_cache.clear()
 
     def update_decorations(self, node, force=False):
         """
@@ -1768,48 +1800,67 @@ class ShadowTree:
                     text = node._formatter
                 except AttributeError:
                     text = "{element_type}:{id}"
-            # Just for the optical impression (who understands what a "Rect: None" means),
-            # let's replace some of the more obvious ones...
+
+            device = self.context.device
             mymap = node.default_map()
-            # We change power to either ppi or percent
+
             if "power" in mymap and "ppi" in mymap and "percent" in mymap:
-                self.context.device.setting(
-                    bool, "use_percent_for_power_display", False
-                )
-                if self.context.device.use_percent_for_power_display:
+                try:
+                    use_percent = device.use_percent_for_power_display
+                except AttributeError:
+                    use_percent = device.setting(
+                        bool, "use_percent_for_power_display", False
+                    )
+                if use_percent:
                     mymap["power"] = mymap["percent"]
-            if "speed" in mymap and "speed_mm_min" in mymap:
-                self.context.device.setting(bool, "use_mm_min_for_speed_display", False)
-                if self.context.device.use_mm_min_for_speed_display:
-                    text = text.replace("mm/s", "mm/min")
-                    mymap["speed"] = mymap["speed_mm_min"]
+
+            speed_key = "speed"
+            if speed_key in mymap and "speed_mm_min" in mymap:
+                try:
+                    use_mm_min = device.use_mm_min_for_speed_display
+                except AttributeError:
+                    use_mm_min = device.setting(
+                        bool, "use_mm_min_for_speed_display", False
+                    )
+                if use_mm_min:
+                    if "mm/s" in text:
+                        text = text.replace("mm/s", "mm/min")
+                    mymap[speed_key] = mymap["speed_mm_min"]
                     mymap["speed_unit"] = "mm/min"
                 else:
                     mymap["speed_unit"] = "mm/s"
-            for key in mymap:
-                if hasattr(node, key) and key in mymap and mymap[key] == "None":
-                    if getattr(node, key) is None:
+
+            sentinel = object()
+            node_dict = getattr(node, "__dict__", {})
+            for key, value in mymap.items():
+                if value == "None":
+                    attr = node_dict.get(key, sentinel)
+                    if attr is sentinel:
+                        attr = getattr(node, key, None)
+                    if attr is None:
                         mymap[key] = "-"
-            # There are a couple of translatable entries,
-            # to make sure we don't get an unwanted translation we add
-            # a special pattern to it
-            translatable = (
-                "element_type",
-                "enabled",
-            )
+
+            translatable = ("element_type", "enabled")
+            translation_cache = self._tree_translation_cache
             pattern = "_TREE_"
-            for key in mymap:
-                if key in translatable:
-                    # Original value
-                    std = mymap[key]
-                    value = _(pattern + std)
-                    if not value.startswith(pattern):
-                        mymap[key] = value
+            for key in translatable:
+                std = mymap.get(key)
+                if not std:
+                    continue
+                translated = translation_cache.get(std)
+                if translated is None:
+                    candidate = _(pattern + std)
+                    if candidate.startswith(pattern):
+                        translated = std
+                    else:
+                        translated = candidate
+                    translation_cache[std] = translated
+                mymap[key] = translated
+
             try:
-                res = text.format_map(mymap)
+                return text.format_map(mymap)
             except (ValueError, KeyError):
-                res = text
-            return res
+                return text
 
         def get_formatter(nodetype):
             if nodetype not in self.formatter_cache:

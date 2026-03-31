@@ -25685,3 +25685,510 @@ msgstr "inicia um servidor de console na porta {port} (telnet)"
 #: meerk40t/network/console_server.py:136
 msgid "starts a web-server (http, default port {port})"
 msgstr "inicia um servidor web (http, porta padrão {port})"
+
+#: translate_check.py:50
+msgid ""
+"This is a test string\n"
+"that spans multiple lines.\n"
+"See?"
+msgstr ""
+"Esta é uma string de teste\n"
+"que se estende por várias linhas.\n"
+"Vê?"
+
+#: meerk40t/balormk/device.py:370
+msgid "Ignore (only act on input operation)"
+msgstr "Ignorar (agir apenas na operação de entrada)"
+
+#: meerk40t/balormk/device.py:371
+msgid "Pause/Resume Job on Press"
+msgstr "Pausar/Retomar trabalho ao pressionar"
+
+#: meerk40t/balormk/device.py:372
+msgid "Pause While Pressed"
+msgstr "Pausar enquanto pressionado"
+
+#: meerk40t/balormk/device.py:373
+msgid "Stop Job"
+msgstr "Parar trabalho"
+
+#: meerk40t/balormk/device.py:375
+msgid "Pedal action"
+msgstr "Ação do pedal"
+
+#: meerk40t/balormk/device.py:378
+msgid ""
+"What action should be taken when the foot pedal is pressed during a job "
+"execution?"
+msgstr ""
+"Que ação deve ser tomada quando o pedal é pressionado durante a execução de "
+"um trabalho?"
+
+#: meerk40t/balormk/device.py:390
+msgid "Active on low signal"
+msgstr "Ativo em sinal baixo"
+
+#: meerk40t/balormk/device.py:393
+msgid "Should the pedal be considered pressed when the signal is low?"
+msgstr "O pedal deve ser considerado pressionado quando o sinal está baixo?"
+
+#: meerk40t/gui/plugin.py:317
+msgid "Suppress sudo/admin warning"
+msgstr "Suprimir aviso sudo/admin"
+
+#: meerk40t/gui/plugin.py:318
+msgid "Don't show the warning when running MeerK40t as root/admin on Linux"
+msgstr "Não mostrar o aviso ao executar MeerK40t como root/admin no Linux"
+
+#: meerk40t/gui/wxmeerk40t.py:555
+msgid ""
+"WARNING: Running MeerK40t as root/administrator!\n"
+"\n"
+"Running MeerK40t with elevated privileges (sudo/admin mode) may lead to unexpected behavior and is not recommended.\n"
+"\n"
+"Potential issues:\n"
+"• File permissions may be set incorrectly\n"
+"• Configuration files may not be accessible to regular users\n"
+"• USB device access may not work properly\n"
+"• System stability may be affected\n"
+"\n"
+"USB Device Configuration:\n"
+"To access USB devices without sudo, you can configure udev rules:"
+msgstr ""
+"AVISO: Executando MeerK40t como root/administrador!\n"
+"\n"
+"Executar MeerK40t com privilégios elevados (modo sudo/admin) pode levar a comportamentos inesperados e não é recomendado.\n"
+"\n"
+"Problemas potenciais:\n"
+"• Permissões de arquivo podem ser definidas incorretamente\n"
+"• Arquivos de configuração podem não estar acessíveis para usuários comuns\n"
+"• Acesso a dispositivos USB pode não funcionar corretamente\n"
+"• A estabilidade do sistema pode ser afetada\n"
+"\n"
+"Configuração de dispositivo USB:\n"
+"Para acessar dispositivos USB sem sudo, você pode configurar regras udev:"
+
+#: meerk40t/gui/wxmeerk40t.py:555
+msgid ""
+"It is strongly recommended to run MeerK40t as a regular user instead of "
+"using sudo."
+msgstr ""
+"É fortemente recomendado executar MeerK40t como usuário comum em vez de usar"
+" sudo."
+
+#: meerk40t/gui/wxmeerk40t.py:558
+msgid "Administrator/Root Warning"
+msgstr "Aviso de administrador/root"
+
+#: meerk40t/gui/wxmeerk40t.py:577
+msgid "Don't show this warning again"
+msgstr "Não mostrar este aviso novamente"
+
+#: meerk40t/gui/wxmeerk40t.py:583
+msgid "Copy Instructions"
+msgstr "Copiar instruções"
+
+#: meerk40t/gui/wxmeerk40t.py:616
+msgid "Instructions copied to clipboard!"
+msgstr "Instruções copiadas para a área de transferência!"
+
+#: meerk40t/gui/wxmeerk40t.py:617
+msgid "Success"
+msgstr "Sucesso"
+
+#: meerk40t/gui/wxmeerk40t.py:619
+msgid "Failed to access clipboard."
+msgstr "Falha ao acessar a área de transferência."
+
+#: meerk40t/gui/wxmeerk40t.py:1613
+msgid ""
+"The bad news is that MeerK40t encountered a crash, and the developers apologise for this bug!\n"
+"\n"
+"The good news is that you can help us fix this bug by anonymously sending us the crash details."
+msgstr ""
+"A má notícia é que MeerK40t encontrou uma falha, e os desenvolvedores se desculpam por este bug!\n"
+"\n"
+"A boa notícia é que você pode nos ajudar a corrigir este bug enviando anonimamente os detalhes da falha."
+
+#: meerk40t/gui/about.py:33
+msgid ""
+"MeerK40t is a free MIT Licensed open source project\n"
+"for lasering on K40 Devices.\n"
+"\n"
+"Participation in the project is highly encouraged.\n"
+"Past participation, and continuing participation is graciously thanked.\n"
+"This program is mostly the brainchild of Tatarize,\n"
+"who sincerely hoped his contributions would be but\n"
+"the barest trickle that becomes a raging river."
+msgstr ""
+"MeerK40t é um projeto de código aberto gratuito licenciado pela MIT\n"
+"para gravação a laser em dispositivos K40.\n"
+"\n"
+"A participação no projeto é altamente encorajada.\n"
+"A participação passada e a participação contínua são agradecidas com gratidão.\n"
+"Este programa é principalmente a criação de Tatarize,\n"
+"que sinceramente esperava que suas contribuições fossem\n"
+"apenas o menor filete que se torna um rio furioso."
+
+#: meerk40t/gui/about.py:34
+msgid ""
+"Since early 2024 jpirnay has taken on the role of lead developer\n"
+"trying to fill in some awfully large shoes."
+msgstr ""
+"Desde o início de 2024, jpirnay assumiu o papel de desenvolvedor líder\n"
+"tentando preencher sapatos terrivelmente grandes."
+
+#: meerk40t/gui/about.py:43
+msgid ""
+"MeerK40t is the result of an incredible piece of work by David Olsen aka Tatarize.\n"
+"He created this program over 4 years allowing users across the world to get the best out of their K40 equipment (and additional lasertypes).\n"
+"\n"
+"Despite having no risk factors for getting cancer, he developed a tumor on his tongue that metastasized into his lungs before the doctors could stop it and passed away on July 26, 2024.\n"
+"He was a mentor, an inspiration and a friend - David you will be missed but you won't be forgotten.\n"
+"\n"
+"Please join the fight against cancer and consider donating to one of the many research and charity organisations across the world.\n"
+"\n"
+"If you are interested to read more about MeerK40t's development history then please refer to:\n"
+"https://github.com/meerk40t/meerk40t/wiki/History:-Major-Version-History,-Changes,-and-Reasons"
+msgstr ""
+"MeerK40t é o resultado de um trabalho incrível de David Olsen aka Tatarize.\n"
+"Ele criou este programa por mais de 4 anos permitindo que usuários em todo o mundo tirassem o melhor de seus equipamentos K40 (e tipos de laser adicionais).\n"
+"\n"
+"Apesar de não ter fatores de risco para câncer, ele desenvolveu um tumor na língua que metastatizou para os pulmões antes que os médicos pudessem pará-lo e faleceu em 26 de julho de 2024.\n"
+"Ele foi um mentor, uma inspiração e um amigo - David você será sentido falta mas não esquecido.\n"
+"\n"
+"Por favor junte-se à luta contra o câncer e considere doar para uma das muitas organizações de pesquisa e caridade ao redor do mundo.\n"
+"\n"
+"Se você estiver interessado em ler mais sobre a história de desenvolvimento do MeerK40t, consulte:\n"
+"https://github.com/meerk40t/meerk40t/wiki/History:-Major-Version-History,-Changes,-and-Reasons"
+
+#: meerk40t/gui/about.py:131
+msgid "and others"
+msgstr "e outros"
+
+#: meerk40t/gui/about.py:145
+msgid "* All the MeerKittens, {developer}.\n"
+msgstr "* Todos os MeerKittens, {developer}.\n"
+
+#: meerk40t/grbl/device.py:450
+msgid "Use G1 before Rapid Moves"
+msgstr "Usar G1 antes de movimentos rápidos"
+
+#: meerk40t/grbl/device.py:454
+msgid "Uses G1 S0 to explicitly set the power to 0 instead of a G0 X Y S0 "
+msgstr ""
+"Usa G1 S0 para definir explicitamente a potência como 0 em vez de G0 X Y S0 "
+
+#: meerk40t/gui/wordlisteditor.py:640
+msgid "Rename failed"
+msgstr "Renomeação falhou"
+
+#: meerk40t/core/elements/elements.py:2919
+msgid "Classify elements"
+msgstr "Classificar elementos"
+
+#: meerk40t/core/elements/wordlist.py:224
+msgid "Warnings during load:"
+msgstr "Avisos durante o carregamento:"
+
+#: meerk40t/core/elements/wordlist.py:298
+msgid "Warnings during CSV load:"
+msgstr "Avisos durante o carregamento do CSV:"
+
+#: meerk40t/extra/vectrace.py:18
+msgid "Vectrace"
+msgstr "Vectrace"
+
+#: meerk40t/gui/gui_mixins.py:161
+msgid "Paste format"
+msgstr "Formato de colagem"
+
+#: meerk40t/gui/snapoptions.py:87 meerk40t/gui/wxmmain.py:1570
+#: meerk40t/gui/wxmmain.py:1578
+msgid "Instant Snap Display"
+msgstr "Exibição instantânea de pontos de encaixe"
+
+#: meerk40t/gui/snapoptions.py:89
+msgid ""
+"Calculate and display snap points immediately during mouse movement (may "
+"affect performance)"
+msgstr ""
+"Calcular e exibir pontos de encaixe imediatamente durante o movimento do "
+"mouse (pode afetar o desempenho)"
+
+#: meerk40t/gui/snapoptions.py:91
+msgid ""
+"If disabled, snap points are only calculated when the mouse is not moving"
+msgstr ""
+"Se desativado, os pontos de encaixe só são calculados quando o mouse não "
+"está se movendo"
+
+#: meerk40t/gui/wordlisteditor.py:269
+msgid "Filter:"
+msgstr "Filtro:"
+
+#: meerk40t/gui/wordlisteditor.py:409
+msgid "Jump"
+msgstr "Ir"
+
+#: meerk40t/gui/wordlisteditor.py:410
+msgid "Jump to a specific index"
+msgstr "Ir para um índice específico"
+
+#: meerk40t/gui/wordlisteditor.py:436
+msgid "Preview the translation of the pattern"
+msgstr "Visualizar a tradução do padrão"
+
+#: meerk40t/gui/wordlisteditor.py:565 meerk40t/gui/wordlisteditor.py:1064
+#: meerk40t/gui/wordlisteditor.py:1523
+msgid "Delete variable '{key}'?"
+msgstr "Excluir variável '{key}'?"
+
+#: meerk40t/gui/wordlisteditor.py:583 meerk40t/gui/wordlisteditor.py:860
+#: meerk40t/gui/wordlisteditor.py:1127 meerk40t/gui/wordlisteditor.py:1196
+#: meerk40t/gui/wordlisteditor.py:1250
+msgid "No variable selected"
+msgstr "Nenhuma variável selecionada"
+
+#: meerk40t/gui/wordlisteditor.py:590 meerk40t/gui/wordlisteditor.py:1208
+msgid "Entry already exists"
+msgstr "Entrada já existe"
+
+#: meerk40t/gui/wordlisteditor.py:592 meerk40t/gui/wordlisteditor.py:1202
+#: meerk40t/gui/wordlisteditor.py:1210
+msgid "Invalid entry"
+msgstr "Entrada inválida"
+
+#: meerk40t/gui/wordlisteditor.py:594 meerk40t/gui/wordlisteditor.py:1212
+msgid "Failed to add entry"
+msgstr "Falha ao adicionar entrada"
+
+#: meerk40t/gui/wordlisteditor.py:614 meerk40t/gui/wordlisteditor.py:1233
+msgid "Delete entry '{entry}'?"
+msgstr "Excluir entrada '{entry}'?"
+
+#: meerk40t/gui/wordlisteditor.py:653
+msgid "Paste {n} entries into '{key}'?"
+msgstr "Colar {n} entradas em '{key}'?"
+
+#: meerk40t/gui/wordlisteditor.py:654
+msgid "Confirm Paste"
+msgstr "Confirmar colagem"
+
+#: meerk40t/gui/wordlisteditor.py:686
+msgid "Count"
+msgstr "Contagem"
+
+#: meerk40t/gui/wordlisteditor.py:864
+msgid "Selected variable has no entries"
+msgstr "A variável selecionada não possui entradas"
+
+#: meerk40t/gui/wordlisteditor.py:869
+msgid "Index:"
+msgstr "Índice:"
+
+#: meerk40t/gui/wordlisteditor.py:870
+msgid "Enter the zero-based index to jump to:"
+msgstr "Insira o índice zero-based para pular:"
+
+#: meerk40t/gui/wordlisteditor.py:871
+msgid "Jump to index"
+msgstr "Ir para o índice"
+
+#: meerk40t/gui/wordlisteditor.py:886
+msgid "Invalid index"
+msgstr "Índice inválido"
+
+#: meerk40t/gui/wordlisteditor.py:891
+msgid "Index out of range (0..{max})"
+msgstr "Índice fora do intervalo (0..{max})"
+
+#: meerk40t/gui/wordlisteditor.py:912
+msgid "Jump failed: {err}"
+msgstr "Falha ao pular: {err}"
+
+#: meerk40t/gui/wordlisteditor.py:1011
+msgid "Add..."
+msgstr "Adicionar..."
+
+#: meerk40t/gui/wordlisteditor.py:1012
+msgid "Edit..."
+msgstr "Editar..."
+
+#: meerk40t/gui/wordlisteditor.py:1027
+msgid "New variable name:"
+msgstr "Novo nome da variável:"
+
+#: meerk40t/gui/wordlisteditor.py:1027
+msgid "Add Wordlist Variable"
+msgstr "Adicionar variável de wordlist"
+
+#: meerk40t/gui/wordlisteditor.py:1033 meerk40t/gui/wordlisteditor.py:1473
+#: meerk40t/gui/wordlisteditor.py:1505
+msgid "Variable '%s' already exists"
+msgstr "A variável '%s' já existe"
+
+#: meerk40t/gui/wordlisteditor.py:1083
+msgid "Delete CSV File..."
+msgstr "Excluir arquivo CSV..."
+
+#: meerk40t/gui/wordlisteditor.py:1131
+msgid "Variable not found"
+msgstr "Variável não encontrada"
+
+#: meerk40t/gui/wordlisteditor.py:1135 meerk40t/gui/wordlisteditor.py:1138
+msgid "Selected variable is not CSV-based"
+msgstr "A variável selecionada não é baseada em CSV"
+
+#: meerk40t/gui/wordlisteditor.py:1144
+msgid "Delete this entry and all other related CSV entries?"
+msgstr "Excluir esta entrada e todas as outras entradas relacionadas do CSV?"
+
+#: meerk40t/gui/wordlisteditor.py:1164
+msgid "Deleted CSV file entries"
+msgstr "Entradas do arquivo CSV excluídas"
+
+#: meerk40t/gui/wordlisteditor.py:1175
+msgid "Add Entry..."
+msgstr "Adicionar entrada..."
+
+#: meerk40t/gui/wordlisteditor.py:1176
+msgid "Paste Entries"
+msgstr "Colar entradas"
+
+#: meerk40t/gui/wordlisteditor.py:1180
+msgid "Edit Entry..."
+msgstr "Editar entrada..."
+
+#: meerk40t/gui/wordlisteditor.py:1181
+msgid "Delete Entry"
+msgstr "Excluir entrada"
+
+#: meerk40t/gui/wordlisteditor.py:1199
+msgid "New entry value:"
+msgstr "Novo valor da entrada:"
+
+#: meerk40t/gui/wordlisteditor.py:1199
+msgid "Add Entry"
+msgstr "Adicionar entrada"
+
+#: meerk40t/gui/wordlisteditor.py:1258
+msgid "Clipboard empty or unavailable"
+msgstr "Área de transferência vazia ou indisponível"
+
+#: meerk40t/gui/wordlisteditor.py:1262
+msgid "Clipboard empty"
+msgstr "Área de transferência vazia"
+
+#: meerk40t/gui/wordlisteditor.py:1284
+msgid "Pasted {a} entries, skipped {s} duplicates"
+msgstr "Coladas {a} entradas, {s} duplicatas ignoradas"
+
+#: meerk40t/gui/wordlisteditor.py:1290
+msgid "Pasted {a} entries, skipped {s} duplicates, {i} invalid"
+msgstr "Coladas {a} entradas, {s} duplicatas ignoradas, {i} inválidas"
+
+#: meerk40t/gui/wordlisteditor.py:1332
+msgid "Invalid name"
+msgstr "Nome inválido"
+
+#: meerk40t/gui/wordlisteditor.py:1338
+msgid "Can't rename to internal variable name"
+msgstr "Não é possível renomear para nome de variável interna"
+
+#: meerk40t/gui/wordlisteditor.py:1344
+msgid "A variable with that name already exists"
+msgstr "Já existe uma variável com esse nome"
+
+#: meerk40t/gui/wordlisteditor.py:1469 meerk40t/gui/wordlisteditor.py:1501
+msgid "Invalid variable name"
+msgstr "Nome de variável inválido"
+
+#: meerk40t/gui/wordlisteditor.py:1477 meerk40t/gui/wordlisteditor.py:1510
+msgid "Can't create internal variable {key}"
+msgstr "Não é possível criar a variável interna {key}"
+
+#: meerk40t/gui/wordlisteditor.py:1545
+msgid "Restored with warnings from "
+msgstr "Restaurado com avisos de "
+
+#: meerk40t/gui/wordlisteditor.py:1552
+msgid "Restored from "
+msgstr "Restaurado de "
+
+#: meerk40t/gui/wordlisteditor.py:1659 meerk40t/gui/wordlisteditor.py:1689
+msgid "Imported file with warnings, {col} fields, {row} rows"
+msgstr "Arquivo importado com avisos, {col} campos, {row} linhas"
+
+#: meerk40t/gui/wordlisteditor.py:1785
+msgid "Wordlist editor failed to initialize"
+msgstr "Falha ao inicializar o editor de wordlist"
+
+#: meerk40t/gui/wordlisteditor.py:1796
+msgid "CSV Import panel failed to initialize"
+msgstr "Falha ao inicializar o painel de importação CSV"
+
+#: meerk40t/gui/wordlisteditor.py:1807
+msgid "About panel failed to initialize"
+msgstr "Falha ao inicializar o painel Sobre"
+
+#: meerk40t/gui/wxmmain.py:1574
+msgid ""
+"Calculate and display snap points immediately during mouse movement (may affect performance)\n"
+"If disabled, snap points are only calculated when the mouse is not moving"
+msgstr ""
+"Calcular e exibir pontos de encaixe imediatamente durante o movimento do mouse (pode afetar o desempenho)\n"
+"Se desativado, os pontos de encaixe só são calculados quando o mouse não está se movendo"
+
+#: meerk40t/image/imagetools.py:2676
+msgid "Create lines"
+msgstr "Criar linhas"
+
+#: meerk40t/tools/livinghinges.py:697
+msgid "Living hinge"
+msgstr "Dobradiça viva"
+
+#: meerk40t/core/elements/files.py:75
+msgid ""
+"Load time: {load_time:.3f}s, Elements before: {before}, after: {after}, "
+"added: {added}"
+msgstr ""
+"Tempo de carregamento: {load_time:.3f}s, Elementos antes: {before}, depois: "
+"{after}, adicionados: {added}"
+
+#: meerk40t/kernel/kernel.py:3849
+msgid "Signal Statistics:"
+msgstr "Estatísticas de Sinal:"
+
+#: meerk40t/kernel/kernel.py:3898
+msgid "Average time threshold in seconds"
+msgstr "Limite médio de tempo em segundos"
+
+#: meerk40t/kernel/kernel.py:3899
+msgid "Total time threshold in seconds"
+msgstr "Limite total de tempo em segundos"
+
+#: meerk40t/kernel/kernel.py:3900
+msgid "List listeners exceeding thresholds (requires debug_mode)"
+msgstr "Listar ouvintes que excedem os limites (requer debug_mode)"
+
+#: meerk40t/kernel/kernel.py:3911
+msgid "Signal stats are only collected when debug_mode is active."
+msgstr ""
+"As estatísticas de sinal são coletadas apenas quando debug_mode está ativo."
+
+#: meerk40t/kernel/kernel.py:3912
+msgid "To enable: set debug_mode True (requires restart)"
+msgstr "Para ativar: 'set debug_mode True' (requer reinicialização)"
+
+#: meerk40t/kernel/kernel.py:3930
+msgid "No slow listeners found (avg >= {avg} or total >= {total})."
+msgstr "Nenhum ouvinte lento encontrado (média >= {avg} ou total >= {total})."
+
+#: meerk40t/kernel/kernel.py:3948
+msgid "Action: 'reset' to reset the counter"
+msgstr "Ação: 'reset' para redefinir o contador"
+
+#: meerk40t/kernel/kernel.py:3949
+msgid "Show or reset the global flat() call counter"
+msgstr "Mostrar ou redefinir o contador global de chamadas flat()"

@@ -423,7 +423,7 @@ def init_commands(kernel):
                 else:
                     nparent.altered()
                     node.emphasized = was_emphasized
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
 
     @self.console_option("etype", "e", type=str, default="scanline")
     @self.console_option("distance", "d", type=str, default=None)
@@ -492,14 +492,14 @@ def init_commands(kernel):
                 hatch_angle_delta=angle_delta.radians,
                 hatch_distance=distance,
             )
-            for n in data:
-                node.append_child(n)
+            node.append_children(data, fast=True)
 
         # Newly created! Classification needed?
         post.append(classify_new([node]))
 
         self.set_emphasis([node])
         node.focus()
+        self.signal("rebuild_tree", "elements")
 
     @self.console_option("wtype", "w", type=str, default="circle")
     @self.console_option("radius", "r", type=str, default=None)
@@ -565,14 +565,14 @@ def init_commands(kernel):
                 wobble_radius=rlen.length_mm,
                 wobble_interval=ilen.length_mm,
             )
-            for n in data:
-                node.append_child(n)
+            node.append_children(data, fast=True)
 
         # Newly created! Classification needed?
         post.append(classify_new([node]))
 
         self.set_emphasis([node])
         node.focus()
+        self.signal("rebuild_tree", "elements")
 
     @self.console_option(
         "size", "s", type=float, default=16, help=_("font size to for object")
@@ -1044,7 +1044,7 @@ def init_commands(kernel):
             if len(text_elems) > 0:
                 # Recalculate bounds
                 calculate_text_bounds(text_elems)
-            self.signal("refresh_scene", "Scene")
+            self.refresh_signal()
             self.signal("element_property_update", changed)
             self.validate_selected_area()
             if classify_required:
@@ -1181,7 +1181,7 @@ def init_commands(kernel):
                 e.altered()
                 changed.append(e)
         if len(changed) > 0:
-            self.signal("refresh_scene", "Scene")
+            self.refresh_signal()
             self.signal("element_property_update", changed)
 
         return "ops", data
@@ -1197,7 +1197,7 @@ def init_commands(kernel):
             return
         for e in data:
             e.set_dirty_bounds()
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         self.validate_selected_area()
 
     @self.console_option("douglas", "d", type=bool, action="store_true", default=False)
@@ -1274,7 +1274,7 @@ def init_commands(kernel):
                     )
         if len(data_changed) > 0:
             self.signal("element_property_update", data_changed)
-            self.signal("refresh_scene", "Scene")
+            self.refresh_signal()
         return "elements", data
 
     @self.console_command(
@@ -1327,7 +1327,8 @@ def init_commands(kernel):
     @self.console_argument("mlist", type=str, help=_("list of positions"), nargs="*")
     @self.console_command(
         ("polygon", "polyline"),
-        help="poly(gon|line) (Length Length)* : " + _("create a polygon or polyline element"),
+        help="poly(gon|line) (Length Length)* : "
+        + _("create a polygon or polyline element"),
         input_type=("elements", None),
         output_type="elements",
         all_arguments_required=True,
@@ -1422,7 +1423,8 @@ def init_commands(kernel):
     )
     @self.console_command(
         "stroke-width",
-        help="stroke-width <length> : " + _("set the stroke width of selected elements"),
+        help="stroke-width <length> : "
+        + _("set the stroke width of selected elements"),
         input_type=(
             None,
             "elements",
@@ -1520,7 +1522,7 @@ def init_commands(kernel):
                 # the painted_bounds
                 e.translated(0, 0)
         self.signal("element_property_update", data)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data
 
     @self.console_command(
@@ -1549,7 +1551,7 @@ def init_commands(kernel):
                 e.stroke_scaled = command == "enable_stroke_scale"
                 e.altered()
         self.signal("element_property_update", data)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data
 
     @self.console_option("filter", "f", type=str, help="Filter indexes")
@@ -1891,7 +1893,7 @@ def init_commands(kernel):
                 self.signal("refresh_tree", apply)
             else:
                 self.signal("element_property_reload", apply)
-                self.signal("refresh_scene", "Scene")
+                self.refresh_signal()
         return "elements", data
 
     @self.console_option(
@@ -2003,7 +2005,7 @@ def init_commands(kernel):
                 self.set_end_time("classify")
             else:
                 self.signal("element_property_update", apply)
-                self.signal("refresh_scene", "Scene")
+                self.refresh_signal()
         return "elements", data
 
     @self.console_argument("x_offset", type=str, help=_("x offset."), default="0")
@@ -2043,8 +2045,12 @@ def init_commands(kernel):
             channel(_("Nothing Selected"))
             return
         selected = list(self.elems(emphasized=True))
-        frame_info = selected[0].display_label() if len(selected) == 1 else f"{len(selected)} elements"
-        
+        frame_info = (
+            selected[0].display_label()
+            if len(selected) == 1
+            else f"{len(selected)} elements"
+        )
+
         x_pos = bounds[0]
         y_pos = bounds[1]
         width = bounds[2] - bounds[0]
@@ -2061,7 +2067,7 @@ def init_commands(kernel):
                 height=height,
                 stroke=Color("red"),
                 type="elem rect",
-                label = f"Frame around {frame_info}"
+                label=f"Frame around {frame_info}",
             )
         self.set_emphasis([node])
         node.focus()
@@ -2166,7 +2172,7 @@ def init_commands(kernel):
             for node in images:
                 self.do_image_update(node)
 
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data
 
     @self.console_argument("scale_x", type=str, help=_("scale_x value"))
@@ -2182,7 +2188,10 @@ def init_commands(kernel):
     )
     @self.console_command(
         "scale",
-        help="scale <scale> [<scale-y>]? : " + _("scale selected elements (optionally different in y, and optionally from a point (default center of selection))"),
+        help="scale <scale> [<scale-y>]? : "
+        + _(
+            "scale selected elements (optionally different in y, and optionally from a point (default center of selection))"
+        ),
         input_type=(None, "elements"),
         output_type="elements",
     )
@@ -2283,7 +2292,7 @@ def init_commands(kernel):
             for node in images:
                 self.do_image_update(node)
             self.process_keyhole_updates(None)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         self.signal("modified_by_tool")
         return "elements", data
 
@@ -2443,7 +2452,7 @@ def init_commands(kernel):
             except ValueError:
                 raise CommandSyntaxError
         if changes:
-            self.signal("refresh_scene", "Scene")
+            self.refresh_signal()
             self.signal("modified_by_tool")
         return "elements", data
 
@@ -2490,7 +2499,7 @@ def init_commands(kernel):
                     changes = True
             if changes:
                 self.process_keyhole_updates(None)
-                self.signal("refresh_scene", "Scene")
+                self.refresh_signal()
                 self.signal("modified_by_tool")
         return "elements", data
 
@@ -2602,7 +2611,7 @@ def init_commands(kernel):
 
             for node in images:
                 self.do_image_update(node)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data
 
     @self.console_argument("sx", type=float, help=_("scale_x value"))
@@ -2613,7 +2622,8 @@ def init_commands(kernel):
     @self.console_argument("ty", type=str, help=_("translate_y value"))
     @self.console_command(
         "matrix",
-        help="matrix <sx> <kx> <ky> <sy> <tx> <ty> : " + _("set the transformation matrix of selected elements"),
+        help="matrix <sx> <kx> <ky> <sy> <tx> <ty> : "
+        + _("set the transformation matrix of selected elements"),
         input_type=(None, "elements"),
         output_type="elements",
     )
@@ -2670,7 +2680,7 @@ def init_commands(kernel):
                 raise CommandSyntaxError
             for node in images:
                 self.do_image_update(node)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return
 
     @self.console_command(
@@ -2697,7 +2707,7 @@ def init_commands(kernel):
                     images.append(e)
             for e in images:
                 self.do_image_update(e)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data
 
     @self.console_command(
@@ -3016,7 +3026,7 @@ def init_commands(kernel):
 
             # Newly created! Classification needed?
             post.append(classify_new(data))
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data
 
     # --------------------------- END COMMANDS ------------------------------

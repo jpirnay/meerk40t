@@ -65,7 +65,7 @@ def init_commands(kernel):
                 idx = int(index)
             except ValueError:
                 idx = self.undo.find(index)
-            if  (idx < 0 or idx > len(self.undo._undo_stack)):
+            if idx < 0 or idx > len(self.undo._undo_stack):
                 channel(f"Invalid index: {index}, performing standard undo")
                 index = None
             else:
@@ -77,7 +77,7 @@ def init_commands(kernel):
         self.validate_selected_area()
         channel(f"Undo: {self.undo}")
         statistics(channel)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         self.signal("rebuild_tree", "all")
 
     @self.console_argument("index", type=str, default=None)
@@ -90,7 +90,7 @@ def init_commands(kernel):
                 idx = int(index)
             except ValueError:
                 idx = self.undo.find(index)
-            if  (idx < 0 or idx > len(self.undo._undo_stack)):
+            if idx < 0 or idx > len(self.undo._undo_stack):
                 channel(f"Invalid index: {index}, performing standard redo")
                 index = None
             else:
@@ -104,7 +104,7 @@ def init_commands(kernel):
         self.validate_selected_area()
         channel(f"Redo: {self.undo}")
         statistics(channel)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         self.signal("rebuild_tree", "all")
 
     @self.console_command(

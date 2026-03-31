@@ -88,10 +88,18 @@ class HatchEffectNode(Node, Suppressable):
         return f"{self.__class__.__name__}('{self.type}', {str(self._parent)})"
 
     def __copy__(self):
-        nd = self.node_dict
-        nd["stroke"] = copy(self.stroke)
-        nd["fill"] = copy(self.fill)
-        return HatchEffectNode(**nd)
+        obj = HatchEffectNode.__new__(HatchEffectNode)
+        obj.__dict__.update(self.__dict__)
+        obj._children = list()
+        obj._references = list()
+        obj._points = list()
+        obj._default_map = dict()
+        obj._parent = None
+        obj._root = None
+        # Deep-copy mutable style objects
+        obj.stroke = copy(self.stroke)
+        obj.fill = copy(self.fill)
+        return obj
 
     def get_effect_descriptor(self):
         """
@@ -120,11 +128,13 @@ class HatchEffectNode(Node, Suppressable):
         """
         try:
             pattern = descriptor.split("|")
-            # Make sure we have enough parts, check get_effect_descriptor for format    
+            # Make sure we have enough parts, check get_effect_descriptor for format
             targetlen = len(self.get_effect_descriptor().split("|"))
             while len(pattern) < targetlen:
                 # add default values for missing parameters
-                pattern.append("0")  # Default unidirectional / include_outlines to False
+                pattern.append(
+                    "0"
+                )  # Default unidirectional / include_outlines to False
             (
                 typeinfo,
                 hatchtype,
@@ -142,7 +152,12 @@ class HatchEffectNode(Node, Suppressable):
                 self.hatch_angle_delta = hatchangledelta
                 self.loops = loops
                 self.unidirectional = unidirectional == "1"
-                self.include_outlines = str(include_outlines).strip().lower() in ("1", "true", "yes", "on")
+                self.include_outlines = str(include_outlines).strip().lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                )
                 self.recalculate()
         except ValueError:
             pass
@@ -350,14 +365,14 @@ class HatchEffectNode(Node, Suppressable):
         path = Geomstr()
         if self._distance is None:
             self.recalculate()
-        for p in range(self.loops):
+        for p in range(int(self.loops)):
             # Choose algorithm based on selection and complexity
             if self.hatch_type == "spiral":
                 path.append(
                     Geomstr.hatch_spiral(
-                        outlines, 
-                        angle=self._angle + p * self._angle_delta, 
-                        distance=self._distance
+                        outlines,
+                        angle=self._angle + p * self._angle_delta,
+                        distance=self._distance,
                     )
                 )
             else:
@@ -435,7 +450,8 @@ class HatchEffectNode(Node, Suppressable):
         for o in outlines:
             if self.include_outlines:
                 yield o
-            for p in range(self.loops):
+            
+            for p in range(int(self.loops)):
                 if self.hatch_type == "spiral":
                     yield Geomstr.hatch_spiral(
                         o,

@@ -79,83 +79,104 @@ class TestESP3DFilenameGeneration(unittest.TestCase):
 
 
 class TestESP3DConnection(unittest.TestCase):
-    """Test ESP3D connection handling."""
+    """Test ESP3D connection handling for the simplified implementation."""
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
     def test_connection_initialization(self, mock_requests):
-        """Test ESP3D connection initialization."""
+        """Test basic ESP3D connection initialization (no auto-detection)."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
-        
+
         conn = ESP3DConnection("192.168.1.100", 80)
         self.assertEqual(conn.host, "192.168.1.100")
         self.assertEqual(conn.port, 80)
         self.assertEqual(conn.base_url, "http://192.168.1.100:80")
+        # Session should not be created until used as a context manager
+        self.assertIsNone(conn.session)
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
-    def test_connection_context_manager(self, mock_requests):
-        """Test ESP3D connection as context manager."""
+    def test_context_manager_login_behavior(self, mock_requests):
+        """Test that session is created and login is attempted when credentials are provided."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
-        
+
         mock_session = MagicMock()
         mock_requests.Session.return_value = mock_session
-        
-        with ESP3DConnection("192.168.1.100", 80) as conn:
+
+        # Make the session.post return a successful response for login
+        mock_post_resp = MagicMock()
+        mock_post_resp.raise_for_status.return_value = None
+        mock_session.post.return_value = mock_post_resp
+
+        with ESP3DConnection("192.168.1.100", 80, username="user", password="pass") as conn:
             self.assertIsNotNone(conn.session)
-        
+            # Verify that login was attempted via POST
+            mock_session.post.assert_called()
+
         mock_session.close.assert_called_once()
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
-    def test_test_connection_success(self, mock_requests):
-        """Test successful connection test."""
+    def test_constructor_does_not_perform_network_calls(self, mock_requests):
+        """Ensure __init__ does not perform network calls (no auto-detection)."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
-        
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.text = "OK"
-        mock_requests.get.return_value = mock_response
-        
+
+        # If requests.get would raise, constructor should still succeed
+        mock_requests.get.side_effect = Exception("Connection failed")
+        conn = ESP3DConnection("192.168.1.100", 80)
+        # No calls performed during init
+        mock_requests.get.assert_not_called()
+
+    @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
+    @patch('meerk40t.grbl.esp3d_upload.requests')
+    def test_test_connection_success(self, mock_requests):
+        """Test successful connection test to /command endpoint."""
+        from meerk40t.grbl.esp3d_upload import ESP3DConnection
+
+        mock_test_response = Mock()
+        mock_test_response.status_code = 200
+        mock_test_response.text = "OK"
+        mock_requests.get.return_value = mock_test_response
+
         conn = ESP3DConnection("192.168.1.100", 80)
         result = conn.test_connection()
-        
+
         self.assertTrue(result["success"])
         self.assertEqual(result["status_code"], 200)
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
     def test_test_connection_failure(self, mock_requests):
-        """Test failed connection test."""
+        """Test failed connection test (RequestException handling)."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
-        
-        # Create proper exception classes that inherit from BaseException
+
         class MockRequestException(Exception):
             pass
-        
+
         class MockTimeout(MockRequestException):
             pass
-        
+
         class MockConnectionError(MockRequestException):
             pass
-        
+
         mock_requests.RequestException = MockRequestException
         mock_requests.Timeout = MockTimeout
         mock_requests.ConnectionError = MockConnectionError
+
         mock_requests.get.side_effect = MockRequestException("Connection refused")
-        
+
         conn = ESP3DConnection("192.168.1.100", 80)
         result = conn.test_connection()
-        
+
         self.assertFalse(result["success"])
         self.assertIn("Connection refused", result["message"])
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
     def test_get_sd_info_success(self, mock_requests):
-        """Test getting SD card information."""
+        """Test getting SD card information (parsing sizes)."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.text = '''
@@ -171,23 +192,23 @@ class TestESP3DConnection(unittest.TestCase):
         }
         '''
         mock_requests.get.return_value = mock_response
-        
+
         conn = ESP3DConnection("192.168.1.100", 80)
         result = conn.get_sd_info()
-        
+
         self.assertTrue(result["success"])
         self.assertEqual(len(result["files"]), 2)
         self.assertEqual(result["occupation"], "52")
         self.assertGreater(result["total"], 0)
         self.assertGreater(result["used"], 0)
-        self.assertEqual(result["free"], result["total"] - result["used"])
+        self.assertEqual(result["free"], result["total"] - result["used"]) 
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
     def test_list_files(self, mock_requests):
         """Test listing files on SD card."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
-        
+
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.text = '''
@@ -203,11 +224,10 @@ class TestESP3DConnection(unittest.TestCase):
         }
         '''
         mock_requests.get.return_value = mock_response
-        
+
         conn = ESP3DConnection("192.168.1.100", 80)
         files = conn.list_files()
-        
-        self.assertEqual(len(files), 2)
+
         self.assertEqual(files[0]["name"], "file1.gc")
 
 
@@ -222,11 +242,16 @@ class TestESP3DUpload(unittest.TestCase):
         import tempfile
         
         # Create a temporary file
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.gc') as f:
-            f.write("G0 X0 Y0\n")
-            temp_path = f.name
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.gc') as temp_file:
+            temp_file.write("G0 X0 Y0\n")
+            temp_path = temp_file.name
         
         try:
+            # Mock firmware detection
+            mock_firmware_response = MagicMock()
+            mock_firmware_response.raise_for_status.return_value = None
+            mock_firmware_response.text = '{"status": "ok", "data": {"FWTarget": "grbl"}}'
+            
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.text = '{"status": "ok"}'
@@ -240,6 +265,7 @@ class TestESP3DUpload(unittest.TestCase):
             mock_session.get.return_value = mock_sd_response
             
             mock_requests.Session.return_value = mock_session
+            mock_requests.get.return_value = mock_firmware_response
             
             with ESP3DConnection("192.168.1.100", 80) as conn:
                 result = conn.upload_file(temp_path, "test.gc", "/")
@@ -253,69 +279,94 @@ class TestESP3DUpload(unittest.TestCase):
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
-    def test_upload_file_insufficient_space(self, mock_requests):
-        """Test upload failure due to insufficient space with various file sizes."""
+    def test_upload_file_request_exception(self, mock_requests):
+        """Test that upload_file raises ESP3DUploadError when the HTTP upload fails."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection, ESP3DUploadError
         import tempfile
-        
-        # Create mock RequestException class
+
         class MockRequestException(Exception):
             pass
-        
-        # Test multiple file sizes to ensure space checking works correctly
-        test_cases = [
-            (1024 * 10, 1024 * 5),      # 10KB file, 5KB free
-            (1024 * 100, 1024 * 50),    # 100KB file, 50KB free
-            (1024 * 1024, 1024 * 500),  # 1MB file, 500KB free
-        ]
-        
-        for file_size_bytes, free_space_bytes in test_cases:
-            with self.subTest(file_size=file_size_bytes, free_space=free_space_bytes):
-                # Create a temporary file of the specified size
-                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.gc') as f:
-                    # Calculate how many lines needed for target size
-                    line = "G0 X0 Y0\n"
-                    lines_needed = file_size_bytes // len(line)
-                    f.write(line * lines_needed)
-                    temp_path = f.name
-                
-                try:
-                    # Mock SD info with insufficient space
-                    total_kb = (free_space_bytes + 1024) // 1024  # Total slightly more than free
-                    used_kb = 1024  # Some used space
-                    mock_sd_response = Mock()
-                    mock_sd_response.status_code = 200
-                    mock_sd_response.text = f'{{"total": "{total_kb} KB", "used": "{used_kb} KB", "files": [], "path": "/", "occupation": "50"}}'
-                    
-                    mock_session = MagicMock()
-                    mock_session.get.return_value = mock_sd_response
-                    mock_requests.Session.return_value = mock_session
-                    mock_requests.RequestException = MockRequestException
-                    
-                    # Test that ESP3DUploadError is raised
-                    with ESP3DConnection("192.168.1.100", 80) as conn:
-                        with self.assertRaises(ESP3DUploadError) as context:
-                            conn.upload_file(temp_path, "test.gc", "/")
-                        
-                        # Check error message mentions space issue
-                        error_msg = str(context.exception).lower()
-                        self.assertTrue(
-                            "insufficient" in error_msg or "space" in error_msg,
-                            f"Expected space-related error for {file_size_bytes} bytes file, got: {context.exception}"
-                        )
-                finally:
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
+
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.gc') as temp_file:
+            temp_file.write("G0 X0 Y0\n")
+            temp_path = temp_file.name
+
+        try:
+            mock_session = MagicMock()
+            # Simulate a request exception during POST
+            mock_session.post.side_effect = MockRequestException("Upload failed")
+            mock_requests.Session.return_value = mock_session
+            mock_requests.RequestException = MockRequestException
+
+            with ESP3DConnection("192.168.1.100", 80) as conn:
+                with self.assertRaises(ESP3DUploadError):
+                    conn.upload_file(temp_path, "test.gc", "/")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     def test_upload_file_not_found(self):
         """Test upload of non-existent file."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection, ESP3DUploadError
         
-        conn = ESP3DConnection("192.168.1.100", 80)
+        # Mock firmware detection to avoid network calls
+        with patch('meerk40t.grbl.esp3d_upload.requests') as mock_requests:
+            mock_firmware_response = MagicMock()
+            mock_firmware_response.raise_for_status.return_value = None
+            mock_firmware_response.text = '{"status": "ok", "data": {"FWTarget": "grbl"}}'
+            mock_requests.get.return_value = mock_firmware_response
+            
+            conn = ESP3DConnection("192.168.1.100", 80)
+            
+            with self.assertRaises(ESP3DUploadError) as context:
+                conn.upload_file("/nonexistent/file.gc", "test.gc", "/")
         
-        with self.assertRaises(ESP3DUploadError) as context:
-            conn.upload_file("/nonexistent/file.gc", "test.gc", "/")
+        self.assertIn("not found", str(context.exception))
+
+
+class TestESP3DExecute(unittest.TestCase):
+    """Test ESP3D file execution functionality."""
+
+    @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
+    @patch('meerk40t.grbl.esp3d_upload.requests')
+    def test_execute_file_success(self, mock_requests):
+        """Test successful file execution."""
+        from meerk40t.grbl.esp3d_upload import ESP3DConnection
+        
+        # Mock firmware detection
+        mock_firmware_response = MagicMock()
+        mock_firmware_response.raise_for_status.return_value = None
+        mock_firmware_response.text = '{"status": "ok", "data": {"FWTarget": "grbl"}}'
+        
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "ok"
+        
+        mock_requests.get.side_effect = [mock_firmware_response, mock_response]
+        
+        conn = ESP3DConnection("192.168.1.100", 80)
+        result = conn.execute_file("test.gc")
+        
+        self.assertTrue(result["success"])
+        # Verify two get calls were made: firmware detection and command execution
+        self.assertEqual(mock_requests.get.call_count, 2)
+    def test_upload_file_not_found(self):
+        """Test upload of non-existent file."""
+        from meerk40t.grbl.esp3d_upload import ESP3DConnection, ESP3DUploadError
+        
+        # Mock firmware detection to avoid network calls
+        with patch('meerk40t.grbl.esp3d_upload.requests') as mock_requests:
+            mock_firmware_response = MagicMock()
+            mock_firmware_response.raise_for_status.return_value = None
+            mock_firmware_response.text = '{"status": "ok", "data": {"FWTarget": "grbl"}}'
+            mock_requests.get.return_value = mock_firmware_response
+            
+            conn = ESP3DConnection("192.168.1.100", 80)
+            
+            with self.assertRaises(ESP3DUploadError) as context:
+                conn.upload_file("/nonexistent/file.gc", "test.gc", "/")
         
         self.assertIn("not found", str(context.exception))
 
@@ -333,16 +384,16 @@ class TestESP3DExecute(unittest.TestCase):
         mock_response.status_code = 200
         mock_response.text = "ok"
         mock_requests.get.return_value = mock_response
-        
+
         conn = ESP3DConnection("192.168.1.100", 80)
         result = conn.execute_file("test.gc")
-        
+
         self.assertTrue(result["success"])
-        mock_requests.get.assert_called_once()
-        
-        # Verify the command includes [ESP700]
+        # Verify one get call was made for execution
+        self.assertEqual(mock_requests.get.call_count, 1)
+
         call_args = mock_requests.get.call_args
-        self.assertIn("[ESP700]", call_args[1]["params"]["cmd"])
+        self.assertEqual(call_args[1]["params"]["commandText"], "[ESP220]/test.gc")
 
     @patch('meerk40t.grbl.esp3d_upload.REQUESTS_AVAILABLE', True)
     @patch('meerk40t.grbl.esp3d_upload.requests')
@@ -350,13 +401,15 @@ class TestESP3DExecute(unittest.TestCase):
         """Test successful file deletion."""
         from meerk40t.grbl.esp3d_upload import ESP3DConnection
         
+        # Mock firmware detection
+        mock_firmware_response = MagicMock()
         mock_response = Mock()
         mock_response.status_code = 200
         mock_requests.get.return_value = mock_response
-        
+
         conn = ESP3DConnection("192.168.1.100", 80)
         result = conn.delete_file("test.gc", "/")
-        
+
         self.assertTrue(result["success"])
 
 

@@ -3,6 +3,7 @@ Specifically draws the rectangle selection box and deals with emphasis of select
 Special case: if the user did not move the mouse within the first 0.5 seconds after
 the initial mouse press then we assume a drag move.
 """
+
 from time import perf_counter
 
 import numpy as np
@@ -18,6 +19,9 @@ from meerk40t.gui.scene.scene import (
 from meerk40t.gui.scene.widget import Widget
 from meerk40t.gui.wxutils import dip_size, get_gc_full_scale, get_matrix_scale
 from meerk40t.core.geomstr import NON_GEOMETRY_TYPES
+
+
+MAX_POINTS_FOR_SNAPPING = 100000
 
 
 class RectSelectWidget(Widget):
@@ -47,8 +51,8 @@ class RectSelectWidget(Widget):
 
     was_lb_raised = False
 
-    def __init__(self, scene):
-        Widget.__init__(self, scene, all=True)
+    def __init__(self, scene, **kwargs):
+        Widget.__init__(self, scene, all=True, **kwargs)
         # Color for selection rectangle (hit, cross, enclose)
         self.selection_style = [
             [
@@ -92,7 +96,7 @@ class RectSelectWidget(Widget):
         """
         Cache the sector calculation to avoid repeated computations.
         """
-        if not hasattr(self, '_cached_sector') or self._cached_sector is None:
+        if not hasattr(self, "_cached_sector") or self._cached_sector is None:
             if self.start_location is None or self.end_location is None:
                 return 0
             sx = self.start_location[0]
@@ -137,32 +141,46 @@ class RectSelectWidget(Widget):
                 xmin, ymin, xmax, ymax = bounds
 
                 # Early exit if rectangles don't overlap
-                if (sel_right < xmin or sel_left > xmax or
-                    sel_bottom < ymin or sel_top > ymax):
+                if (
+                    sel_right < xmin
+                    or sel_left > xmax
+                    or sel_bottom < ymin
+                    or sel_top > ymax
+                ):
                     cover = 0
                 else:
                     # Determine coverage type
-                    cover = self._calculate_coverage(sel_left, sel_top, sel_right, sel_bottom,
-                                                   xmin, ymin, xmax, ymax)
+                    cover = self._calculate_coverage(
+                        sel_left, sel_top, sel_right, sel_bottom, xmin, ymin, xmax, ymax
+                    )
 
                 # Apply selection based on modifiers and coverage
                 if cover >= selection_method:
                     selected |= self._apply_selection(node, cover)
 
-    def _calculate_coverage(self, sel_left, sel_top, sel_right, sel_bottom,
-                           xmin, ymin, xmax, ymax):
+    def _calculate_coverage(
+        self, sel_left, sel_top, sel_right, sel_bottom, xmin, ymin, xmax, ymax
+    ):
         """
         Calculate the coverage type (touch, cross, enclose) for an element.
         Optimized version with clearer logic and early returns.
         """
         # Check if selection rectangle is fully inside the element (ignore)
-        if (sel_left > xmin and sel_right < xmax and
-            sel_top > ymin and sel_bottom < ymax):
+        if (
+            sel_left > xmin
+            and sel_right < xmax
+            and sel_top > ymin
+            and sel_bottom < ymax
+        ):
             return 0
 
         # Check for enclosure (element fully contained in selection)
-        if (sel_left <= xmin and xmax <= sel_right and
-            sel_top <= ymin and ymax <= sel_bottom):
+        if (
+            sel_left <= xmin
+            and xmax <= sel_right
+            and sel_top <= ymin
+            and ymax <= sel_bottom
+        ):
             return self.SELECTION_ENCLOSE
 
         # Check for crossing (element spans selection boundary in one dimension)
@@ -208,7 +226,7 @@ class RectSelectWidget(Widget):
 
     def _get_cached_status_message(self):
         """Cache the status message to avoid repeated string operations."""
-        if not hasattr(self, '_cached_status_msg') or self._cached_status_msg is None:
+        if not hasattr(self, "_cached_status_msg") or self._cached_status_msg is None:
             sector = self.sector
             _ = self.scene.context._
             base_msg = _(self.selection_style[self.selection_method[sector] - 1][2])
@@ -235,29 +253,30 @@ class RectSelectWidget(Widget):
                 x = x[0]
             return box[0] <= x <= box[2] and box[1] <= y <= box[3]
 
-        def shortest_distance(p1, p2, tuplemode):
-            """
-            Calculates the shortest distance between two arrays of 2-dimensional points.
-            """
-            try:
-                # Calculate the Euclidean distance between each point in p1 and p2
-                if tuplemode:
-                    # For an array of tuples:
-                    dist = np.sqrt(np.sum((p1[:, np.newaxis] - p2) ** 2, axis=2))
-                else:
-                    # For an array of complex numbers
-                    dist = np.abs(p1[:, np.newaxis] - p2[np.newaxis, :])
+        # Use the memory-safe nearest-neighbor helper which uses a KD-tree if SciPy is available
+        try:
+            from meerk40t.core.spatial import shortest_distance as _shortest_distance
 
-                # Find the minimum distance and its corresponding indices
-                min_dist = np.min(dist)
-                if np.isnan(min_dist):
-                    return None, 0, 0
-                min_indices = np.argwhere(dist == min_dist)
-
-                # Return the coordinates of the two points
-                return min_dist, p1[min_indices[0][0]], p2[min_indices[0][1]]
-            except Exception:  # out of memory eg
-                return None, None, None
+            def shortest_distance(p1, p2, tuplemode):
+                try:
+                    return _shortest_distance(p1, p2, tuplemode)
+                except Exception:
+                    return None, None, None
+        except Exception:
+            # Fallback: keep original naive implementation if import fails
+            def shortest_distance(p1, p2, tuplemode):
+                try:
+                    if tuplemode:
+                        dist = np.sqrt(np.sum((p1[:, np.newaxis] - p2) ** 2, axis=2))
+                    else:
+                        dist = np.abs(p1[:, np.newaxis] - p2[np.newaxis, :])
+                    min_dist = np.min(dist)
+                    if np.isnan(min_dist):
+                        return None, 0, 0
+                    min_indices = np.argwhere(dist == min_dist)
+                    return min_dist, p1[min_indices[0][0]], p2[min_indices[0][1]]
+                except Exception:
+                    return None, None, None
 
         def move_to(dx, dy):
             if dx == 0 and dy == 0:
@@ -340,7 +359,7 @@ class RectSelectWidget(Widget):
             did_snap_to_point = False
             if (
                 self.scene.context.snap_points
-                and "shift" not in modifiers
+                and (not modifiers or "shift" not in modifiers)
                 and b is not None
             ):
                 gap = self.scene.context.action_attract_len / get_matrix_scale(matrix)
@@ -394,24 +413,37 @@ class RectSelectWidget(Widget):
                         if not ignore:
                             target.append(end)
                         last = end
-                # t2 = perf_counter()
-                if other_points and selected_points:
-                    np_other = np.asarray(other_points)
-                    np_selected = np.asarray(selected_points)
-                    dist, pt1, pt2 = shortest_distance(np_other, np_selected, False)
+
+                total_points = len(other_points) + len(selected_points)
+                if (
+                    other_points
+                    and selected_points
+                    and total_points <= MAX_POINTS_FOR_SNAPPING
+                ):
+                    try:
+                        np_other = np.asarray(other_points)
+                        np_selected = np.asarray(selected_points)
+                        dist, pt1, pt2 = shortest_distance(np_other, np_selected, False)
+                    except MemoryError:
+                        dist, pt1, pt2 = None, None, None
 
                     if dist is not None and dist < gap:
-                        did_snap_to_point = True
-                        dx = pt1.real - pt2.real
-                        dy = pt1.imag - pt2.imag
-                        move_to(dx, dy)
-                        # Get new value
-                        b = self.scene.context.elements._emphasized_bounds
+                        try:
+                            did_snap_to_point = True
+                            dx = pt1.real - pt2.real
+                            dy = pt1.imag - pt2.imag
+                            move_to(dx, dy)
+                            # Get new value
+                            b = self.scene.context.elements._emphasized_bounds
+                        except (IndexError, TypeError, AttributeError):
+                            # Fallback: skip snapping if coordinate conversion fails
+                            pass
+
                         # t3 = perf_counter()
                         # print (f"Snap, compared {len(selected_points)} pts to {len(other_points)} pts. Total time: {t3-t1:.2f}sec, Generation: {t2-t1:.2f}sec, shortest: {t3-t2:.2f}sec")
             if (
                 self.scene.context.snap_grid
-                and "shift" not in modifiers
+                and (not modifiers or "shift" not in modifiers)
                 and b is not None
                 and not did_snap_to_point
             ):
@@ -426,21 +458,35 @@ class RectSelectWidget(Widget):
                     ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2),
                 )
                 other_points = self.scene.pane.grid.grid_points
-                if other_points and selected_points:
-                    np_other = np.asarray(other_points)
-                    np_selected = np.asarray(selected_points)
-                    dist, pt1, pt2 = shortest_distance(np_other, np_selected, True)
+                if (
+                    other_points
+                    and selected_points
+                    and len(other_points) + len(selected_points)
+                    <= MAX_POINTS_FOR_SNAPPING
+                ):
+                    try:
+                        np_other = np.asarray(other_points)
+                        np_selected = np.asarray(selected_points)
+                        dist, pt1, pt2 = shortest_distance(np_other, np_selected, True)
+                    except MemoryError:
+                        dist, pt1, pt2 = None, None, None
+
                     if dist is not None and dist < gap:
-                        # did_snap_to_point = True
-                        dx = pt1[0] - pt2[0]
-                        dy = pt1[1] - pt2[1]
-                        move_to(dx, dy)
-                        # Get new value
-                        b = self.scene.context.elements._emphasized_bounds
+                        try:
+                            # did_snap_to_point = True
+                            dx = pt1[0] - pt2[0]
+                            dy = pt1[1] - pt2[1]
+                            move_to(dx, dy)
+                            # Get new value
+                            b = self.scene.context.elements._emphasized_bounds
+                        except (IndexError, TypeError, AttributeError):
+                            pass
 
                 # t2 = perf_counter()
                 # print (f"Corner-points, compared {len(selected_points)} pts to {len(other_points)} pts. Total time: {t2-t1:.2f}sec")
-                # Even then magnets win!
+
+            # Even then magnets win!
+            if not modifiers or "shift" not in modifiers:
                 dx, dy = self.scene.pane.revised_magnet_bound(b)
                 move_to(dx, dy)
 
@@ -591,8 +637,11 @@ class RectSelectWidget(Widget):
         """
         Draw the selection rectangle with optimized status message caching.
         """
-        if (self.mode != "select" or self.start_location is None or
-            self.end_location is None):
+        if (
+            self.mode != "select"
+            or self.start_location is None
+            or self.end_location is None
+        ):
             return
 
         self.selection_style[0][0] = self.scene.colors.color_selection1

@@ -82,10 +82,20 @@ class WarpEffectNode(Node, FunctionalParameter, Suppressable):
         return f"{self.__class__.__name__}('{self.type}', {str(self._parent)})"
 
     def __copy__(self):
-        nd = self.node_dict
-        nd["stroke"] = copy(self.stroke)
-        nd["fill"] = copy(self.fill)
-        return WarpEffectNode(**nd)
+        obj = WarpEffectNode.__new__(WarpEffectNode)
+        obj.__dict__.update(self.__dict__)
+        obj._children = list()
+        obj._references = list()
+        obj._points = list()
+        obj._default_map = dict()
+        obj._parent = None
+        obj._root = None
+        # Deep-copy mutable style objects
+        obj.stroke = copy(self.stroke)
+        obj.fill = copy(self.fill)
+        if hasattr(self, 'perspective_matrix') and self.perspective_matrix is not None:
+            obj.perspective_matrix = copy(self.perspective_matrix)
+        return obj
 
     def get_effect_descriptor(self):
         """
@@ -182,6 +192,13 @@ class WarpEffectNode(Node, FunctionalParameter, Suppressable):
         if self.autohide and hasattr(new_child, "hidden"):
             new_child.hidden = True
         return super().append_child(new_child)
+
+    def append_children(self, new_children, fast=False):
+        if self.autohide:
+            for new_child in new_children:
+                if hasattr(new_child, "hidden"):
+                    new_child.hidden = True
+        return super().append_children(new_children, fast=fast)
 
     def notify_translated(self, node=None, dx=0, dy=0, interim=False, **kwargs):
         Node.notify_translated(self, node, dx, dy, interim=interim, **kwargs)

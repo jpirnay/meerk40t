@@ -14,6 +14,7 @@ try:
     import requests
     REQUESTS_AVAILABLE = True
 except ImportError:
+    requests = None
     REQUESTS_AVAILABLE = False
 
 
@@ -119,16 +120,15 @@ class ESP3DConnection:
                 "message": f"Connection failed: {e}"
             }
 
+
     def get_sd_info(self):
         """
-        Get SD card information (space, files, etc.).
-
-        Returns:
-            dict: SD card information including total, used, and free space
+        Get SD card information (space, files, etc.) from OEM ESP3D firmware.
+        Uses /upload?path=/&PAGEID=0 endpoint which returns JSON file list.
         """
         try:
-            url = f"{self.base_url}/sdfiles"
-            params = {"path": "/"}
+            url = f"{self.base_url}/upload"
+            params = {"path": "/", "PAGEID": "0"}
             
             session = self.session if self.session else requests
             response = session.get(url, params=params, timeout=self.timeout)
@@ -201,10 +201,8 @@ class ESP3DConnection:
         Args:
             local_path: Path to local file
             remote_filename: Name for file on SD card (8.3 format recommended)
-            remote_path: Target directory on SD card (default: "/")
-            progress_callback: Optional callback function(bytes_sent, total_bytes).
-                Currently only called with (-1, -1) when SD card space check fails
-                but upload will continue. Future enhancement: real progress tracking.
+            remote_path: Target directory on SD card (ignored for OEM firmwares like MKS DLC32)
+            progress_callback: Optional callback function (not implemented in this version)
 
         Returns:
             dict: Upload result with success status and message
@@ -214,93 +212,30 @@ class ESP3DConnection:
 
         file_size = os.path.getsize(local_path)
 
-        # Check available space
-        try:
-            sd_info = self.get_sd_info()
-        except ESP3DUploadError as e:
-            # If we can't check space, warn but continue
-            if progress_callback:
-                progress_callback(-1, -1)  # Signal warning
-        else:
-            # Successfully got SD info, check if there's enough space
-            if sd_info["free"] < file_size:
-                raise ESP3DUploadError(
-                    f"Insufficient space on SD card. "
-                    f"Need {file_size} bytes, have {sd_info['free']} bytes free"
-                )
+        # Use /upload endpoint as required by OEM ESP3D firmwares
+        url = f"{self.base_url}/upload"
 
-        # Prepare upload
-        url = f"{self.base_url}/sdfiles"
-        
-        # Ensure path ends with /
-        if not remote_path.endswith("/"):
-            remote_path += "/"
-        
-        # Prepare form data
-        files_data = {}
-        form_data = {
-            "path": remote_path
-        }
-        
-        # Add file size parameter (ESP3D requirement)
-        size_param = f"{remote_filename}S"
-        form_data[size_param] = str(file_size)
-        
         try:
             with open(local_path, "rb") as f:
-                files_data["myfiles"] = (remote_filename, f, "application/octet-stream")
-                
+                # Send file using the same format as working curl command
+                files_data = {"file": (remote_filename, f, "application/octet-stream")}
+
                 session = self.session if self.session else requests
-                
-                # Upload file to ESP3D
                 response = session.post(
                     url,
-                    data=form_data,
                     files=files_data,
                     timeout=self.timeout * 3  # Longer timeout for upload
-                    )
-                
+                )
                 response.raise_for_status()
-                
-                # Check response
-                if response.text:
-                    import json
-                    try:
-                        result = json.loads(response.text)
-                        status = result.get("status", "unknown")
-                        
-                        if "error" in status.lower() or "fail" in status.lower():
-                            raise ESP3DUploadError(f"Upload failed: {status}")
-                        
-                        return {
-                            "success": True,
-                            "message": f"File uploaded successfully: {remote_filename}",
-                            "filename": remote_filename,
-                            "size": file_size,
-                            "response": result
-                        }
-                    except json.JSONDecodeError:
-                        # If not JSON, check for success indicators in text
-                        if response.status_code == 200:
-                            return {
-                                "success": True,
-                                "message": f"File uploaded successfully: {remote_filename}",
-                                "filename": remote_filename,
-                                "size": file_size
-                            }
-                        else:
-                            raise ESP3DUploadError(f"Upload status unclear: {response.text[:100]}")
-                else:
-                    if response.status_code == 200:
-                        return {
-                            "success": True,
-                            "message": f"File uploaded successfully: {remote_filename}",
-                            "filename": remote_filename,
-                            "size": file_size
-                        }
-                    else:
-                        raise ESP3DUploadError(f"Upload failed with status {response.status_code}")
-                        
+
+                # If we get here, upload was successful
+                return {
+                    "success": True,
+                    "message": f"File uploaded successfully: {remote_filename}",
+                    "filename": remote_filename,
+                    "size": file_size
+                }
+
         except requests.RequestException as e:
             raise ESP3DUploadError(f"Upload failed: {e}")
         except IOError as e:
@@ -308,57 +243,48 @@ class ESP3DConnection:
 
     def delete_file(self, filename, path="/"):
         """
-        Delete a file from SD card.
-
-        Args:
-            filename: Name of file to delete
-            path: Directory path
-
-        Returns:
-            dict: Deletion result
+        Delete a file from SD card on OEM ESP3D firmware.
+        Uses /upload?path=/&action=delete&filename=...&PAGEID=0
         """
         try:
-            url = f"{self.base_url}/sdfiles"
+            url = f"{self.base_url}/upload"
             params = {
-                "path": path,
+                "path": "/",
                 "action": "delete",
-                "filename": filename
+                "filename": filename,
+                "PAGEID": "0"
             }
             
             session = self.session if self.session else requests
             response = session.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             
+            # Note: Your firmware may not return JSON, but HTTP 200 means success
             return {
                 "success": True,
                 "message": f"File deleted: {filename}"
             }
         except requests.RequestException as e:
             raise ESP3DUploadError(f"Delete failed: {e}")
-
     def execute_file(self, filename, path="/"):
         """
         Execute a G-code file on the device.
 
         Args:
             filename: Name of file to execute
-            path: Path prefix (default: "/")
+            path: Path prefix (ignored for OEM firmwares like MKS DLC32)
 
         Returns:
             dict: Execution result
         """
         try:
-            # ESP3D command to execute file: [ESP700]/path/filename
+            # Use the correct prefix and parameter for MKS DLC32 V2.1 firmware
             if filename.startswith("/"):
-                full_path = filename
-            else:
-                # Normalize path to avoid double slashes
-                path_normalized = path.rstrip("/")
-                full_path = f"{path_normalized}/{filename}"
-            command = f"[ESP700]{full_path}"
+                filename = filename[1:]
+            command_text = f"[ESP220]/{filename}"
             
             url = f"{self.base_url}/command"
-            params = {"cmd": command}
+            params = {"commandText": command_text}
             
             session = self.session if self.session else requests
             response = session.get(url, params=params, timeout=self.timeout)

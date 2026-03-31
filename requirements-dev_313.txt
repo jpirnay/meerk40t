@@ -1,0 +1,15 @@
+# Use this file for Python 3.13 specific dependencies
+# Most notably, numpy can now be numpy 2.x
+numpy
+wheel
+Pillow
+pyusb
+wxPython
+ezdxf
+opencv-python-headless
+pytest
+flake8
+polib
+chardet
+requests>=2.25.0
+websocket-client

@@ -401,11 +401,12 @@ def init_commands(kernel):
         # print ("Want to delete %d" % entry)
         # for n in todelete[entry]:
         #     print ("Node to delete: %s" % n.type)
+        # _("Delete")
         with self.undoscope("Delete"):
             self.remove_nodes(todelete[entry])
             self.validate_selected_area()
         self.signal("update_group_labels")
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "tree", [self._tree]
 
     @self.console_command(
@@ -424,7 +425,7 @@ def init_commands(kernel):
         with self.static("remove"):
             self.remove_nodes(data)
         self.signal("update_group_labels")
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "tree", [self._tree]
 
     @self.console_command(

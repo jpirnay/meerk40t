@@ -154,7 +154,8 @@ def init_commands(kernel):
     )
     @self.console_command(
         "grid",
-        help="grid <columns> <rows> <x_distance> <y_distance> <origin> : " + _("create a grid of elements"),
+        help="grid <columns> <rows> <x_distance> <y_distance> <origin> : "
+        + _("create a grid of elements"),
         input_type=(None, "elements"),
         output_type="elements",
     )
@@ -245,7 +246,7 @@ def init_commands(kernel):
             channel(f"{counted} copies created")
             # Newly created! Classification needed?
             post.append(classify_new(data_out))
-            self.signal("refresh_scene", "Scene")
+            self.refresh_signal()
         return "elements", data_out
 
     # Hint for translation: _("Unrotated"), _("Repeats"), _("Radius"), _("Deltaangle"), _("Startangle"), _("Endangle")
@@ -272,7 +273,8 @@ def init_commands(kernel):
     )
     @self.console_command(
         "radial",
-        help="radial <repeats> <radius> <startangle> <endangle> <rotate> : " + _("create radial copies of elements"),
+        help="radial <repeats> <radius> <startangle> <endangle> <rotate> : "
+        + _("create radial copies of elements"),
         input_type=(None, "elements"),
         output_type="elements",
     )
@@ -376,7 +378,7 @@ def init_commands(kernel):
         channel(f"{counted} copies created")
         # Newly created! Classification needed?
         post.append(classify_new(data_out))
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data_out
 
     # Hint for translation: _("Copies"), _("Radius"), _("Startangle"), _("Endangle"), _("Rotate"), _("Deltaangle")
@@ -404,7 +406,8 @@ def init_commands(kernel):
     )
     @self.console_command(
         "circ_copy",
-        help="circ_copy <copies> <radius> <startangle> <endangle> <rotate> : " + _("Create circular copies of the selected elements"),
+        help="circ_copy <copies> <radius> <startangle> <endangle> <rotate> : "
+        + _("Create circular copies of the selected elements"),
         input_type=(None, "elements"),
         output_type="elements",
     )
@@ -505,7 +508,7 @@ def init_commands(kernel):
         channel(f"{counted} copies created")
 
         post.append(classify_new(data_out))
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         return "elements", data_out
 
     # --------------------------- END COMMANDS ------------------------------

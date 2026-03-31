@@ -1,4 +1,8 @@
 import datetime
+import os
+import platform
+import shutil
+import socket
 from platform import system
 
 import wx
@@ -18,25 +22,93 @@ from .wxutils import (
 
 _ = wx.GetTranslation
 
-HEADER_TEXT = (
-    "MeerK40t is a free MIT Licensed open source project\n"
-    + "for lasering on K40 Devices.\n\n"
-    + "Participation in the project is highly encouraged.\n"
-    + "Past participation, and continuing participation is graciously thanked.\n"
-    + "This program is mostly the brainchild of Tatarize,\n"
-    + "who sincerely hoped his contributions would be but\n"
-    + "the barest trickle that becomes a raging river."
-)
-HEADER_TEXT_2 = "Since early 2024 jpirnay has taken on the role of lead developer\ntrying to fill in some awfully large shoes."
 
-EULOGY_TEXT = (
-    "MeerK40t is the result of an incredible piece of work by David Olsen aka Tatarize.\n"
-    + "He created this program over 4 years allowing users across the world to get the best out of their K40 equipment (and additional lasertypes).\n\n"
-    + "Despite having no risk factors for getting cancer, he developed a tumor on his tongue that metastasized into his lungs before the doctors could stop it and passed away on July 26, 2024.\n"
-    + "He was a mentor, an inspiration and a friend - David you will be missed but you won't be forgotten.\n\n"
-    + "Please join the fight against cancer and consider donating to one of the many research and charity organisations across the world.\n\n"
-    + "If you are interested to read more about MeerK40t's development history then please refer to:\nhttps://github.com/meerk40t/meerk40t/wiki/History:-Major-Version-History,-Changes,-and-Reasons"
-)
+def get_package_version(package_names, module=None, attr_names=None):
+    """
+    Get package version using multiple fallback strategies.
+
+    This function tries to get version information in the following order:
+    1. importlib.metadata (Python 3.8+)
+    2. importlib_metadata backport (Python 3.6-3.7)
+    3. Module attributes (__version__, version, etc.)
+
+    Args:
+        package_names: PyPI package name (str) or list of names to try.
+                      E.g., 'pillow' or ['opencv-python', 'opencv-python-headless']
+        module: Imported module object (optional, for attribute fallback)
+        attr_names: List of attribute names to try (default: ['__version__', 'version'])
+
+    Returns:
+        Version string or "??" if not found
+    """
+    if isinstance(package_names, str):
+        package_names = [package_names]
+
+    if attr_names is None:
+        attr_names = ['__version__', 'version']
+
+    # Method 1: Try importlib.metadata (Python 3.8+)
+    try:
+        from importlib.metadata import version
+        for pkg_name in package_names:
+            try:
+                return version(pkg_name)
+            except Exception:
+                continue
+    except ImportError:
+        pass  # Python < 3.8
+
+    # Method 2: Try importlib_metadata backport (for Python 3.6-3.7)
+    try:
+        from importlib_metadata import version
+        for pkg_name in package_names:
+            try:
+                return version(pkg_name)
+            except Exception:
+                continue
+    except ImportError:
+        pass  # Backport not installed
+
+    # Method 3: Try module attributes
+    if module is not None:
+        for attr_name in attr_names:
+            if hasattr(module, attr_name):
+                attr_value = getattr(module, attr_name)
+                # Handle callable attributes (e.g., potrace.potracelib_version())
+                if callable(attr_value):
+                    try:
+                        return str(attr_value())
+                    except Exception:
+                        continue
+                return str(attr_value)
+
+    # Give up
+    return "??"
+
+
+def get_header_text():
+    return _(
+        "MeerK40t is a free MIT Licensed open source project\n"
+        + "for lasering on K40 Devices.\n\n"
+        + "Participation in the project is highly encouraged.\n"
+        + "Past participation, and continuing participation is graciously thanked.\n"
+        + "This program is mostly the brainchild of Tatarize,\n"
+        + "who sincerely hoped his contributions would be but\n"
+        + "the barest trickle that becomes a raging river."
+    )
+
+def get_header_text_2():
+    return _("Since early 2024 jpirnay has taken on the role of lead developer\ntrying to fill in some awfully large shoes.")
+
+def get_eulogy_text():
+    return _(
+        "MeerK40t is the result of an incredible piece of work by David Olsen aka Tatarize.\n"
+        + "He created this program over 4 years allowing users across the world to get the best out of their K40 equipment (and additional lasertypes).\n\n"
+        + "Despite having no risk factors for getting cancer, he developed a tumor on his tongue that metastasized into his lungs before the doctors could stop it and passed away on July 26, 2024.\n"
+        + "He was a mentor, an inspiration and a friend - David you will be missed but you won't be forgotten.\n\n"
+        + "Please join the fight against cancer and consider donating to one of the many research and charity organisations across the world.\n\n"
+        + "If you are interested to read more about MeerK40t's development history then please refer to:\nhttps://github.com/meerk40t/meerk40t/wiki/History:-Major-Version-History,-Changes,-and-Reasons"
+    )
 
 class AboutPanel(wx.Panel):
     def __init__(self, *args, context=None, **kwds):
@@ -88,7 +160,7 @@ class AboutPanel(wx.Panel):
         self.meerk40t_about_text_header = wxStaticText(
             self,
             wx.ID_ANY,
-            _(HEADER_TEXT) + "\n" + _(HEADER_TEXT_2),
+            get_header_text() + "\n" + get_header_text_2(),
         )
 
         self.meerk40t_about_text_header.SetFont(
@@ -104,22 +176,27 @@ class AboutPanel(wx.Panel):
         hsizer_pic_info.Add(self.meerk40t_about_text_header, 1, wx.EXPAND, 0)
         vsizer_main.Add(hsizer_pic_info, 1, wx.EXPAND, 0)
         # Simplify addition of future developers without need to translate every single time
-        # Ordered by the amount of commits (as of Jan 2024)
-        # tatarize ~ 11.800
-        # jpirnay ~ 3.200
-        # Sophist-UK ~ 500
-        # tiger12506 ~ 90
-        # joerlane ~ 50
-        # jaredly ~ 15
-        # frogmaster ~ 10
-        hall_of_fame = [
-            "Sophist-UK",
-            "tiger12506",
-            "jaredly",
-            "frogmaster",
-            "inspectionsbybob",
-            "jondale",
+        # Ordered by the amount of commits (as of Jan 2026)
+        contributor_data = [
+            # Name, commit count, to be included in hall of fame
+            ("tatarize", 12014, False),
+            ("jpirnay", 6778, False),
+            ("Sophist-UK", 542, True),
+            ("tiger12506", 94, True),   
+            ("joerlane", 52, False),
+            ("BetaEta84", 47, True),
+            ("Laserology", 22, True),
+            ("ristraus", 20, True),
+            ("jaredly", 16, True),
+            ("frogmaster", 9, True),
+            ("jondale", 9, True),
         ]
+        # Top 5 contributors, sorted by commits unless flagged otherwise
+        hall_of_fame = [
+            name for name, commits, include in sorted(contributor_data, key=lambda x: x[1], reverse=True) if include and commits >= 20
+        ]
+        if len(hall_of_fame) < len(contributor_data):
+            hall_of_fame.append(_("and others"))
         meerk40t_about_text = wxStaticText(
             self,
             wx.ID_ANY,
@@ -133,7 +210,7 @@ class AboutPanel(wx.Panel):
             + _(
                 "* @joerlane for his hardware investigation wizardry into how the M2-Nano works.\n"
             )
-            + _("* All the MeerKittens, {developer}. \n").format(
+            + _("* All the MeerKittens, {developer}.\n").format(
                 developer=", ".join(hall_of_fame)
             )
             + _(
@@ -1481,7 +1558,7 @@ class DavidPanel(ScrolledPanel):
         )
         self.david_picture.SetSize(self.david_picture.GetBestSize())
         self.david_header = wxStaticText(self, wx.ID_ANY, "David Olsen (1982-2024)")
-        eulogy:str = _(EULOGY_TEXT)
+        eulogy:str = get_eulogy_text()
         if system() == "Darwin":
             # MacOS does not wrap labels around, so we need do it ourselves
             splitted = eulogy.split("\n")
@@ -1583,10 +1660,6 @@ class InformationPanel(ScrolledPanel):
 
     def __set_properties(self):
         # Fill the content...
-        import os
-        import platform
-        import socket
-
         uname = platform.uname()
         info = ""
         info += f"System: {uname.system}" + "\n"
@@ -1607,6 +1680,39 @@ class InformationPanel(ScrolledPanel):
             info += f"Ip-Address: {socket.gethostbyname(socket.gethostname())}"
         except socket.gaierror:
             info += "Ip-Address: localhost"
+        
+        # Linux-specific information
+        if uname.system == "Linux":
+            # Distribution and version
+            try:
+                import distro
+                dist_name = distro.name()
+                dist_version = distro.version()
+                info += f"\nDistribution: {dist_name} {dist_version}"
+            except ImportError:
+                # Fallback to parsing /etc/os-release
+                try:
+                    with open("/etc/os-release", "r") as f:
+                        for line in f:
+                            if line.startswith("PRETTY_NAME="):
+                                dist_info = line.split("=", 1)[1].strip().strip('"')
+                                info += f"\nDistribution: {dist_info}"
+                                break
+                except (FileNotFoundError, IOError):
+                    pass
+            
+            # Desktop session
+            wm = os.environ.get("XDG_SESSION_DESKTOP") or os.environ.get("DESKTOP_SESSION") or "Unknown"
+            info += f"\nDesktop Session: {wm}"
+            
+            # Free disk space
+            try:
+                total, used, free = shutil.disk_usage("/")
+                free_gb = free / (1024**3)
+                info += f"\nFree Disk Space: {free_gb:.2f} GB"
+            except (ImportError, OSError):
+                pass
+        
         self.os_version.SetValue(info)
 
         info = f"{APPLICATION_NAME} v{APPLICATION_VERSION}"
@@ -1730,13 +1836,13 @@ class ComponentPanel(ScrolledPanel):
 
         def get_wxp():
             entry = ["wxPython", "", "", "https://www.wxpython.org"]
-            info = "??"
-            status = _("Old")
             try:
-                info = wx.version()
+                # wx.version is a callable, so we pass it as an attribute name
+                info = get_package_version("wxPython", wx, ["version"])
                 status = _("Present")
-            except:
-                pass
+            except Exception:
+                info = "??"
+                status = _("Old")
             entry[1] = info
             entry[2] = status
             self.content.append(entry)
@@ -1746,10 +1852,13 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import numpy as np
 
-                try:
-                    info = np.version.short_version
-                except AttributeError:
-                    info = "??"
+                # Try metadata first, then numpy's special version attribute
+                info = get_package_version("numpy", np)
+                if info == "??":
+                    try:
+                        info = np.version.short_version
+                    except AttributeError:
+                        pass
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1763,10 +1872,7 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import PIL
 
-                try:
-                    info = PIL.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("pillow", PIL)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1802,12 +1908,7 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import vtracer
 
-                # for e in vars(vtracer):
-                #     print (f"var {e} - {getattr(vtracer, e)}")
-                try:
-                    info = vtracer.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("vtracer", vtracer)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1821,10 +1922,7 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import ezdxf
 
-                try:
-                    info = ezdxf.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("ezdxf", ezdxf)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1838,10 +1936,7 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import usb
 
-                try:
-                    info = usb.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("pyusb", usb)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1855,10 +1950,7 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import serial
 
-                try:
-                    info = serial.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("pyserial", serial)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1872,10 +1964,8 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import cv2
 
-                try:
-                    info = cv2.__version__
-                except AttributeError:
-                    info = "??"
+                # OpenCV can be installed as opencv-python or opencv-python-headless
+                info = get_package_version(["opencv-python", "opencv-python-headless"], cv2)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1896,12 +1986,7 @@ class ComponentPanel(ScrolledPanel):
                 import barcodes as mk
 
                 has_barcodes = True
-                if hasattr(mk, "version"):
-                    info = mk.version
-                elif hasattr(mk, "__version__"):
-                    info = mk.__version__
-                else:
-                    info = "??"
+                info = get_package_version("meerk40t-barcodes", mk)
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1913,11 +1998,7 @@ class ComponentPanel(ScrolledPanel):
                 try:
                     import qrcode
 
-                    info = "??"
-                    try:
-                        info = qrcode.__version__
-                    except AttributeError:
-                        pass
+                    info = get_package_version("qrcode", qrcode)
                     entry = (
                         "qrcode",
                         info,
@@ -1930,11 +2011,7 @@ class ComponentPanel(ScrolledPanel):
                 try:
                     import barcode
 
-                    info = "??"
-                    try:
-                        info = barcode.version
-                    except AttributeError:
-                        pass
+                    info = get_package_version("python-barcode", barcode)
                     entry = (
                         "barcodes",
                         info,
@@ -1950,10 +2027,9 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import pyclipr
 
-                try:
-                    info = pyclipr.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("pyclipr", pyclipr)
+                if hasattr(pyclipr, "clipperVersion"):
+                    info += f" (clipper {pyclipr.clipperVersion})"
                 status = _("Present")
             except ImportError:
                 info = "??"
@@ -1967,10 +2043,7 @@ class ComponentPanel(ScrolledPanel):
             try:
                 import numba
 
-                try:
-                    info = numba.__version__
-                except AttributeError:
-                    info = "??"
+                info = get_package_version("numba", numba)
                 status = _("Present")
             except (ImportError, AttributeError):
                 info = "??"

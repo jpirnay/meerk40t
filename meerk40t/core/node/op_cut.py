@@ -2,13 +2,14 @@ from math import isnan
 
 from meerk40t.core.elements.element_types import op_nodes, elem_nodes
 from meerk40t.core.node.node import Node
+from meerk40t.core.node.mixins import OperationMixin
 from meerk40t.core.node.nutils import path_to_cutobjects
 from meerk40t.core.parameters import Parameters
 from meerk40t.core.units import UNITS_PER_MM, Length
 from meerk40t.svgelements import Color, Path, Polygon
 
 
-class CutOpNode(Node, Parameters):
+class CutOpNode(OperationMixin, Node, Parameters):
     """
     Default object defining a cut operation done on the laser.
 
@@ -176,6 +177,65 @@ class CutOpNode(Node, Parameters):
             return some_nodes
         return False
 
+    def drop_multi(self, drag_nodes, modify=True, flag=False):
+        """Drop multiple nodes at once for better performance"""
+        if not drag_nodes:
+            return False
+
+        elements_to_add = []
+        ops_to_move = []
+        references_to_move = []
+        success = False
+
+        for drag_node in drag_nodes:
+            if drag_node.type in op_nodes:
+                if modify:
+                    ops_to_move.append(drag_node)
+                success = True
+                continue
+
+            if drag_node.type == "reference":
+                if drag_node.node.type not in self._allowed_elements_dnd:
+                    continue
+                if modify:
+                    references_to_move.append(drag_node)
+                success = True
+                continue
+
+            if hasattr(drag_node, "as_geometry"):
+                if (
+                    drag_node.type in self._allowed_elements_dnd
+                    and not drag_node.has_ancestor("branch reg")
+                ):
+                    if modify:
+                        elements_to_add.append(drag_node)
+                    success = True
+                continue
+
+            if drag_node.type in ("file", "group") and not drag_node.has_ancestor(
+                "branch reg"
+            ):
+                found = False
+                for e in drag_node.flat(elem_nodes):
+                    if e.type in self._allowed_elements_dnd:
+                        if modify:
+                            elements_to_add.append(e)
+                        found = True
+                if found:
+                    success = True
+                continue
+
+        if modify:
+            if ops_to_move:
+                self.insert_siblings(ops_to_move, fast=True)
+            if references_to_move:
+                self.append_children(references_to_move, fast=True)
+            if elements_to_add:
+                for elem in elements_to_add:
+                    self.add_reference(elem, pos=None if flag else 0, fast=True)
+
+        return success
+
     def would_accept_drop(self, drag_nodes):
         # drag_nodes can be a single node or a list of nodes
         if isinstance(drag_nodes, (list, tuple)):
@@ -197,35 +257,7 @@ class CutOpNode(Node, Parameters):
                 return True
         return False
 
-    def has_color_attribute(self, attribute):
-        return attribute in self.allowed_attributes
-
-    def add_color_attribute(self, attribute):
-        if not attribute in self.allowed_attributes:
-            self.allowed_attributes.append(attribute)
-
-    def remove_color_attribute(self, attribute):
-        if attribute in self.allowed_attributes:
-            self.allowed_attributes.remove(attribute)
-
-    def has_attributes(self):
-        return "stroke" in self.allowed_attributes or "fill" in self.allowed_attributes
-
-    def is_referenced(self, node):
-        for e in self.children:
-            if e is node:
-                return True
-            if hasattr(e, "node") and e.node is node:
-                return True
-        return False
-
-    def valid_node_for_reference(self, node):
-        if node.type in self._allowed_elements_dnd:
-            return True
-        else:
-            return False
-
-    def classify(self, node, fuzzy=False, fuzzydistance=100, usedefault=False):
+    def would_classify(self, node, fuzzy=False, fuzzydistance=100, usedefault=False):
         def matching_color(col1, col2):
             _result = False
             if col1 is None and col2 is None:
@@ -251,7 +283,6 @@ class CutOpNode(Node, Parameters):
             if self.default and usedefault:
                 # Have classified but more classification might be needed
                 if self.valid_node_for_reference(node):
-                    self.add_reference(node)
                     feedback.append("stroke")
                     feedback.append("fill")
                     return True, self.stopop, feedback
@@ -269,21 +300,19 @@ class CutOpNode(Node, Parameters):
                             if matching_color(plain_color_op, plain_color_node):
                                 if self.valid_node_for_reference(node):
                                     result = True
-                                    self.add_reference(node)
                                     # Have classified but more classification might be needed
                                     feedback.append(attribute)
                     if result:
                         return True, self.stopop, feedback
                 else:  # empty ? Anything goes
                     if self.valid_node_for_reference(node):
-                        self.add_reference(node)
                         # Have classified but more classification might be needed
                         feedback.append("stroke")
                         feedback.append("fill")
                         return True, self.stopop, feedback
         return False, False, None
 
-    def add_reference(self, node=None, pos=None, **kwargs):
+    def add_reference(self, node=None, pos=None, fast=False, **kwargs):
         # is the very first child an effect node?
         # if yes then we will put that reference under this one
         if node is None:
@@ -295,7 +324,7 @@ class CutOpNode(Node, Parameters):
             "effect "
         )
         effect = self._children[0] if first_is_effect else None
-        ref = self.add(node=node, type="reference", pos=pos, **kwargs)
+        ref = self.add(node=node, type="reference", pos=pos, fast=fast, **kwargs)
         node._references.append(ref)
         if first_is_effect and not kwargs.get("ignore_effect", False):
             effect.append_child(ref)

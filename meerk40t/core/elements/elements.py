@@ -11,7 +11,6 @@ functionality, element classification, and the management of persistent
 operations and preferences.
 """
 
-
 import contextlib
 import os.path
 import threading
@@ -660,6 +659,52 @@ class Elemental(Service):
         self._emphasized_bounds_painted = None
         self._emphasized_bounds_dirty = True
         self._tree = RootNode(self)
+        self._tree.node_lock = self.node_lock
+        # Caches for flattened lists to avoid repeated full-tree traversals
+        self._elems_cache = None  # Cached list of element nodes (elem_nodes)
+        self._elems_nodes_cache = None  # Cached list of element nodes + groups/effects (elem_group_nodes)
+        self._ops_cache = None  # Cached list of operation nodes
+        # Optimized filtered sub-caches for common queries during interactive operations
+        self._emphasized_cache = None  # Cached list of emphasized elements only
+        self._selected_cache = None  # Cached list of selected elements only
+        self._targeted_cache = None  # Cached list of targeted elements only
+
+        # Notification tracking for performance debugging
+        self._notification_stats = {
+            'emphasized': 0,
+            'selected': 0,
+            'targeted': 0,
+            'highlighted': 0,
+            'modified': 0,
+            'translated': 0,
+            'translated_interim': 0,
+            'scaled': 0,
+            'altered': 0,
+            'structure_changed': 0,
+        }
+
+        # Lightweight tracker for flat() calls (diagnostics)
+        class FlatTracker:
+            def __init__(self):
+                self.total_calls = 0
+                self.lock = threading.Lock()
+
+            def inc(self, n=1):
+                with self.lock:
+                    self.total_calls += n
+
+            def reset(self):
+                with self.lock:
+                    self.total_calls = 0
+
+            def get(self):
+                with self.lock:
+                    return self.total_calls
+
+        self.flat_tracker = FlatTracker()
+
+        # Register as a listener to the root node to invalidate caches on structural changes
+        self._tree.listen(self)
         self._save_restore_job = ConsoleFunction(self, ".save_restore_point\n", times=1)
 
         # Point / Segments selected.
@@ -668,7 +713,7 @@ class Elemental(Service):
         self.segments = []
 
         # Will be filled with a list of newly added nodes after a load operation
-        self.added_elements = []
+        self._added_elements = []
 
         # keyhole-logic
         self.registered_keyholes = {}
@@ -676,6 +721,11 @@ class Elemental(Service):
         self.setting(bool, "use_undo", True)
         self.setting(int, "undo_levels", 20)
         self.setting(bool, "filenode_selection", False)
+        # Fastload setting, this is used to speed up loading when many elements are present
+        # It effectively prevents the triggering of events
+        # and recalculations until the end of the load
+        # Requires a full tree-rebuild at the end of the load
+        self.setting(bool, "fastload", True)
 
         undo_active = self.use_undo
         undo_levels = self.undo_levels
@@ -744,6 +794,14 @@ class Elemental(Service):
         self.default_operations_title = ""
         self.init_default_operations_nodes()
 
+    def refresh_signal(self, just_emphasized = False):
+        self.signal("invalidate_layer", "emphasized" if just_emphasized else "elements")
+        self.signal("refresh_scene", "Scene")
+
+    @property 
+    def added_elements(self):
+        return self._added_elements
+    
     @property
     def node_lock(self):
         """Exposes the node lock for external use."""
@@ -779,19 +837,21 @@ class Elemental(Service):
     @contextlib.contextmanager
     def signalfree(self, source):
         try:
-            last = self.suppress_signalling
+            previous_suppress = self.suppress_signalling
             self.suppress_signalling = True
-            self.stop_visual_updates()
+            if not previous_suppress:
+                self.stop_visual_updates()
             yield self
         finally:
-            self.resume_visual_updates()
-            self.suppress_signalling = False
-            self.signal(source)
+            if not previous_suppress:
+                self.resume_visual_updates()
+                self.signal(source)
+            self.suppress_signalling = previous_suppress
 
     @contextlib.contextmanager
     def static(self, source: str):
         try:
-            self.stop_updates(source, False)
+            self.stop_updates(source)
             yield self
         finally:
             self.resume_updates(source)
@@ -814,7 +874,10 @@ class Elemental(Service):
             self.undo.mark(message)
         source = message.replace(" ", "_")
         try:
+            # When `static` is requested, pause notification delivery to avoid
+            # flooding the scheduler with per-node events during bulk ops.
             if static:
+                # Pause per-node notifications
                 self.stop_updates(message, False)
             self.do_undo = False
             yield self
@@ -824,6 +887,21 @@ class Elemental(Service):
             if undo_active:
                 self.do_undo = True
             busy.end()
+
+    def invalidate(self):
+        with self.node_lock:
+            # Marks all caches as invalid
+            self._emphasized_bounds = None
+            self._emphasized_bounds_painted = None
+            self._emphasized_bounds_dirty = True
+            # Caches for flattened lists to avoid repeated full-tree traversals
+            self._elems_cache = None  # Cached list of element nodes (elem_nodes)
+            self._elems_nodes_cache = None  # Cached list of element nodes + groups/effects (elem_group_nodes)
+            self._ops_cache = None  # Cached list of operation nodes
+            # Optimized filtered sub-caches for common queries during interactive operations
+            self._emphasized_cache = None  # Cached list of emphasized elements only
+            self._selected_cache = None  # Cached list of selected elements only
+            self._targeted_cache = None  # Cached list of targeted elements only
 
     def stop_visual_updates(self):
         self._tree.notify_frozen(True)
@@ -903,6 +981,9 @@ class Elemental(Service):
         if not node.can_emphasize:
             return
         node.emphasized = flag
+        # Emphasize all child objects, too
+        for child in node.children:
+            self.set_node_emphasis(child, flag)
         if flag:
             if self._first_emphasized is None:
                 self._first_emphasized = node
@@ -1107,7 +1188,7 @@ class Elemental(Service):
             # Now that we have the colors let's iterate through all elements
             fuzzy = self.classify_fuzzy
             fuzzydistance = self.classify_fuzzydistance
-            for n in self.flat(types=elem_nodes):
+            for n in self.elems():
                 addit = False
                 if hasattr(n, attrib):
                     c = getattr(n, attrib)
@@ -1132,13 +1213,15 @@ class Elemental(Service):
         set_fill_to_none = (
             op_assign.type in ("op engrave", "op cut") and attrib == "stroke"
         )
+        # Collect nodes that can be dropped
+        droppable_nodes = []
         for n in data:
             if op_assign.can_drop(n):
-                with self._node_lock:
-                    if exclusive:
+                droppable_nodes.append(n)
+                if exclusive:
+                    with self._node_lock:
                         for ref in list(n._references):
                             ref.remove_node()
-                    op_assign.drop(n, modify=True)
                 if (
                     impose == "to_elem"
                     and target_color is not None
@@ -1148,12 +1231,17 @@ class Elemental(Service):
                     if set_fill_to_none and hasattr(n, "fill"):
                         n.fill = None
                     needs_refresh = True
+        # Batch drop all nodes
+        if droppable_nodes:
+            with self._node_lock:
+                op_assign.drop_multi(droppable_nodes, modify=True)
         # Refresh the operation so any changes like color materialize...
         self.signal("element_property_reload", op_assign)
         if needs_refresh:
             # We changed elems, so update the tree and the scene
             self.signal("element_property_update", data)
-            self.signal("refresh_scene", "Scene")
+            self.refresh_signal()
+        self.signal("rebuild_tree", "operations")
 
     def condense_elements(self, data, expand_single_group_at_end: bool = False):
         """Return a minimal node selection by recursively collapsing fully covered branches.
@@ -1184,7 +1272,9 @@ class Elemental(Service):
             min_time = None
             for child in parent.children:
                 child_time = getattr(child, "_emphasized_time", None)
-                if child_time is not None and (min_time is None or child_time < min_time):
+                if child_time is not None and (
+                    min_time is None or child_time < min_time
+                ):
                     min_time = child_time
             if min_time is not None:
                 parent._emphasized_time = min_time
@@ -1219,7 +1309,9 @@ class Elemental(Service):
                         selection.discard(child)
                     selection.add(parent)
 
-                    child_orders = [order_map.get(child) for child in children if child in order_map]
+                    child_orders = [
+                        order_map.get(child) for child in children if child in order_map
+                    ]
                     if child_orders:
                         order_map[parent] = min(child_orders)
                     else:
@@ -1240,7 +1332,11 @@ class Elemental(Service):
             return (base, node_depth(node))
 
         result = sorted(selection, key=sort_key)
-        while len(result) == 1 and expand_single_group_at_end and result[0].type in condensible_types:
+        while (
+            len(result) == 1
+            and expand_single_group_at_end
+            and result[0].type in condensible_types
+        ):
             # If we have just one group at the end then we expand the result to the children
             node = result[0]
             if len(node.children) == 0:
@@ -1322,6 +1418,7 @@ class Elemental(Service):
         else:
             groupdx, groupdy = calc_dx_dy()
             # print (f"Group move: {groupdx:.2f}, {groupdy:.2f}")
+        # _("Align")
         with self.undoscope("Align"):
             for q in data_to_align:
                 # print(f"Node to be treated: {q.type}")
@@ -1341,7 +1438,7 @@ class Elemental(Service):
                 # print (f"Translating {q.type} by {dx:.0f}, {dy:.0f}")
                 self.translate_node(q, dx, dy)
         self.signal("modified_by_tool")
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         self.signal("warn_state_update")
 
     def wordlist_delta(self, orgtext, increase):
@@ -1363,7 +1460,7 @@ class Elemental(Service):
 
     def wordlist_advance(self, delta):
         self.mywordlist.move_all_indices(delta)
-        self.signal("refresh_scene", "Scene")
+        self.refresh_signal()
         self.signal("wordlist")
 
     def wordlist_translate(self, pattern, elemnode=None, increment=True):
@@ -1580,7 +1677,7 @@ class Elemental(Service):
         op_tree = {}
         op_info = {}
         seclist = list(settings.derivable(name))
-        seclist.sort() # Make sure we load in the right order
+        seclist.sort()  # Make sure we load in the right order
         for section in seclist:
             if section.endswith("info"):
                 for key in settings.keylist(section):
@@ -1602,6 +1699,8 @@ class Elemental(Service):
             except ValueError:
                 # Attempted to create a non-bootstrapped node type.
                 continue
+            if hasattr(op, "validate"):
+                op.validate()
             # op.load(settings, section)
             op_tree[section] = op
         op_list = []
@@ -1626,7 +1725,7 @@ class Elemental(Service):
         @return:
         """
         # _("Load operations")
-        with self.undoscope("Load operations"):
+        with self.undoscope("Load operations", static=self.fastload):
             settings = self.op_data
             if clear:
                 self.clear_operations()
@@ -1929,19 +2028,29 @@ class Elemental(Service):
             self.schedule(self._save_restore_job)
 
     def emphasized(self, *args):
+        """Called when emphasis/selection/targeting status changes on any node."""
+        self._notification_stats['emphasized'] += 1
         self._emphasized_bounds_dirty = True
         self._emphasized_bounds = None
         self._emphasized_bounds_painted = None
+        # Invalidate sub-caches since emphasis/selection/targeted status changed
+        self._emphasized_cache = None
+        self._selected_cache = None
+        self._targeted_cache = None
 
     def altered(self, node=None, *args, **kwargs):
+        """Called when node properties are modified (position, size, etc)."""
+        self._notification_stats['altered'] += 1
         self._emphasized_bounds_dirty = True
         self._emphasized_bounds = None
         self._emphasized_bounds_painted = None
+        # Note: Do NOT invalidate sub-caches here - emphasis status hasn't changed
         # Hint for translate check: _("Element altered")
         self.prepare_undo("Element altered")
         self.test_for_keyholes(node, "altered")
 
     def modified(self, node=None, *args):
+        self._notification_stats['modified'] += 1
         self._emphasized_bounds_dirty = True
         self._emphasized_bounds = None
         self._emphasized_bounds_painted = None
@@ -1953,6 +2062,10 @@ class Elemental(Service):
         # It's safer to just recompute the selection area
         # as these listener routines will be called for every
         # element that faces a .translated(dx, dy)
+        if interim:
+            self._notification_stats['translated_interim'] += 1
+        else:
+            self._notification_stats['translated'] += 1
         self._emphasized_bounds_dirty = True
         self._emphasized_bounds = None
         self._emphasized_bounds_painted = None
@@ -1964,6 +2077,7 @@ class Elemental(Service):
         # It's safer to just recompute the selection area
         # as these listener routines will be called for every
         # element that faces a .translated(dx, dy)
+        self._notification_stats['scaled'] += 1
         self._emphasized_bounds_dirty = True
         self._emphasized_bounds = None
         self._emphasized_bounds_painted = None
@@ -1971,14 +2085,66 @@ class Elemental(Service):
         self.prepare_undo("Element scaled")
         self.test_for_keyholes(node, "scaled")
 
+    def print_notification_stats(self, channel=None):
+        """Print formatted notification statistics as a table."""
+        if channel is None:
+            def channel(msg):
+                print(msg)
+
+        stats = self._notification_stats
+
+        # Header
+        channel("=" * 60)
+        channel("Element Notification Statistics")
+        channel("=" * 60)
+        channel(f"{'Notification Type':<30} {'Count':>10}")
+        channel("-" * 60)
+
+        # Data rows
+        channel(f"{'Emphasized (selection)':<30} {stats['emphasized']:>10,}")
+        channel(f"{'Selected':<30} {stats['selected']:>10,}")
+        channel(f"{'Targeted':<30} {stats['targeted']:>10,}")
+        channel(f"{'Highlighted':<30} {stats['highlighted']:>10,}")
+        channel(f"{'Modified':<30} {stats['modified']:>10,}")
+        channel(f"{'Translated':<30} {stats['translated']:>10,}")
+        channel(f"{'Translated (interim)':<30} {stats['translated_interim']:>10,}")
+        channel(f"{'Scaled':<30} {stats['scaled']:>10,}")
+        channel(f"{'Altered':<30} {stats['altered']:>10,}")
+        channel(f"{'Structure changed':<30} {stats['structure_changed']:>10,}")
+
+        # Total
+        total = sum(stats.values())
+        channel("-" * 60)
+        channel(f"{'Total notifications':<30} {total:>10,}")
+        channel("=" * 60)
+
+    def reset_notification_stats(self):
+        """Reset all notification counters to zero."""
+        self._notification_stats = {
+            'emphasized': 0,
+            'selected': 0,
+            'targeted': 0,
+            'highlighted': 0,
+            'modified': 0,
+            'translated': 0,
+            'translated_interim': 0,
+            'scaled': 0,
+            'altered': 0,
+            'structure_changed': 0,
+        }
+
     def node_attached(self, node, **kwargs):
         # Hint for translate check: _("Element added")
         self.prepare_undo("Element added")
+        self._invalidate_elems_cache()
+        self._invalidate_ops_cache()
 
     def node_detached(self, node, **kwargs):
         # Hint for translate check: _("Element deleted")
         self.prepare_undo("Element deleted")
         self.remove_keyhole(node)
+        self._invalidate_elems_cache()
+        self._invalidate_ops_cache()
 
     def listen_tree(self, listener):
         self._tree.listen(listener)
@@ -2170,6 +2336,11 @@ class Elemental(Service):
                 self.classify(list(self.elems()))
 
     def flat(self, **kwargs):
+        try:
+            # Best-effort: increment elements-level flat call counter for diagnostics
+            self.flat_tracker.inc()
+        except Exception:
+            pass
         yield from self._tree.flat(**kwargs)
 
     def validate_ids(self, nodelist=None, generic=True):
@@ -2213,6 +2384,41 @@ class Elemental(Service):
         return self._tree.get(type="branch elems")
 
     def ops(self, **kwargs):
+        """Return operation nodes. Uses a simple per-instance cache when possible.
+
+        Cache is used when no depth is specified and no custom types filter is provided.
+        Property-based filters like emphasized/selected are applied on the cached list.
+        """
+        allowed_filters = {"emphasized", "selected", "targeted", "highlighted", "lock"}
+        # Cacheable if no depth and types not specified
+        cacheable = ("depth" not in kwargs or kwargs.get("depth") is None) and (
+            "types" not in kwargs
+        )
+
+        if cacheable:
+            if self._ops_cache is None:
+                # Build cache under lock
+                with self.node_lock:
+                    ops = self.op_branch
+                    self._ops_cache = [
+                        item
+                        for item in ops.flat(depth=1)
+                        if not item.type.startswith("branch")
+                        and not item.type.startswith("ref")
+                    ]
+            # If only property filters provided, apply them on the cache
+            if not kwargs or set(kwargs.keys()).issubset(allowed_filters):
+                for item in self._ops_cache:
+                    skip = False
+                    for k, v in kwargs.items():
+                        if getattr(item, k) != v:
+                            skip = True
+                            break
+                    if not skip:
+                        yield item
+                return
+            # Otherwise fallthrough to full traversal
+
         operations = self.op_branch
         for item in operations.flat(depth=1, **kwargs):
             if item.type.startswith("branch") or item.type.startswith("ref"):
@@ -2227,12 +2433,191 @@ class Elemental(Service):
             yield item
 
     def elems(self, **kwargs):
-        elements = self.elem_branch
-        yield from elements.flat(types=elem_nodes, **kwargs)
+        """Return element nodes. Uses per-instance caches when possible to avoid repeated tree traversals.
 
-    def elems_nodes(self, depth=None, **kwargs):
+        Performance optimizations:
+        - Main cache: All elements (self._elems_cache)
+        - Sub-caches: emphasized=True, selected=True, targeted=True (rebuilt only on tree changes)
+        - Typical drag operation on 1 element in 10k design: O(1) vs O(10k) with sub-cache
+
+        Cache is used when no depth is specified and types is None or matches elem_nodes.
+        Property filters (emphasized/selected/targeted/highlighted/lock) use sub-caches or main cache.
+        """
+        allowed_filters = {"emphasized", "selected", "targeted", "highlighted", "lock"}
+        depth = kwargs.get("depth", None)
+        types_kw = kwargs.get("types", None)
+        cacheable = (depth is None) and (types_kw is None or types_kw == elem_nodes)
+
+        # Fast path: single filter using optimized sub-cache (most common during interactive ops)
+        if cacheable and len(kwargs) == 1:
+            # emphasized=True is called on every frame during drag/resize operations
+            if kwargs.get("emphasized") is True:
+                if self._emphasized_cache is None:
+                    with self.node_lock:
+                        if self._elems_cache is None:
+                            self._elems_cache = list(self.flat(types=elem_nodes))
+                        self._emphasized_cache = [e for e in self._elems_cache if e.emphasized]
+                yield from self._emphasized_cache
+                return
+
+            # selected=True is also common
+            if kwargs.get("selected") is True:
+                if self._selected_cache is None:
+                    with self.node_lock:
+                        if self._elems_cache is None:
+                            self._elems_cache = list(self.flat(types=elem_nodes))
+                        self._selected_cache = [e for e in self._elems_cache if e.selected]
+                yield from self._selected_cache
+                return
+
+            # targeted=True for operation highlighting
+            if kwargs.get("targeted") is True:
+                if self._targeted_cache is None:
+                    with self.node_lock:
+                        if self._elems_cache is None:
+                            self._elems_cache = list(self.flat(types=elem_nodes))
+                        self._targeted_cache = [e for e in self._elems_cache if e.targeted]
+                yield from self._targeted_cache
+                return
+
+        # If we can use the cache and it exists, apply property filters in memory
+        if (
+            cacheable
+            and self._elems_cache is not None
+            and set(kwargs.keys()).issubset(allowed_filters)
+        ):
+            # Get filter values (None means no filter, True/False means filter by that value)
+            # FIXED BUG: Previously used 'is not None' which treated False same as True!
+            emph_val = kwargs.get("emphasized", None)
+            sel_val = kwargs.get("selected", None)
+            targ_val = kwargs.get("targeted", None)
+            high_val = kwargs.get("highlighted", None)
+            lock_val = kwargs.get("lock", None)
+
+            # Optimized loop with early continue for non-matching elements
+            cache = self._elems_cache
+            for e in cache:
+                if emph_val is not None and e.emphasized != emph_val:
+                    continue
+                if sel_val is not None and e.selected != sel_val:
+                    continue
+                if targ_val is not None and e.targeted != targ_val:
+                    continue
+                if high_val is not None and e.highlighted != high_val:
+                    continue
+                if lock_val is not None and e.lock != lock_val:
+                    continue
+                yield e
+            return
+
         elements = self.elem_branch
-        yield from elements.flat(types=elem_group_nodes, depth=depth, **kwargs)
+        # If cacheable and no filters, build and return cache
+        if cacheable and not kwargs:
+            if self._elems_cache is None:
+                with self.node_lock:
+                    # Use Elemental.flat() here so the elements-level flat_tracker is incremented
+                    self._elems_cache = list(self.flat(types=elem_nodes))
+            for e in self._elems_cache:
+                yield e
+            return
+
+        # Fallback to traversal for complex requests
+        # If caller provided explicit 'types' in kwargs, forward it directly to the branch
+        if "types" in kwargs:
+            yield from elements.flat(**kwargs)
+        else:
+            yield from self.flat(types=elem_nodes, **kwargs)
+
+    # Cache invalidation helpers and root notification handlers
+    def _is_in_branch(self, node, branch):
+        """Return True if node is descendant of branch."""
+        p = node
+        while p is not None:
+            if p is branch:
+                return True
+            p = p.parent
+        return False
+
+    def _invalidate_elems_cache(self, *args, **kwargs):
+        """Invalidate element caches when tree structure changes (add/remove elements).
+
+        Sub-caches must also be invalidated because:
+        - A new emphasized/selected element could be added
+        - An emphasized/selected element could be removed
+        """
+        self._elems_cache = None
+        self._elems_nodes_cache = None
+        self._emphasized_cache = None
+        self._selected_cache = None
+        self._targeted_cache = None
+
+    def _invalidate_ops_cache(self, *args, **kwargs):
+        """Invalidate operation caches when tree structure changes."""
+        self._ops_cache = None
+
+    def node_created(self, node=None, **kwargs):
+        self._invalidate_elems_cache()
+        self._invalidate_ops_cache()
+
+    def node_destroyed(self, node=None, **kwargs):
+        self._invalidate_elems_cache()
+        self._invalidate_ops_cache()
+
+    def structure_changed(self, node=None, **kwargs):
+        self._notification_stats['structure_changed'] += 1
+        self._invalidate_elems_cache()
+        self._invalidate_ops_cache()
+
+    def elems_nodes(self, depth=None, cascade_criteria=False, **kwargs):
+        """
+        Yield element nodes (including groups/effects) from the elements branch.
+
+        Performance: Uses _elems_nodes_cache when possible (no depth, no cascade_criteria, no filters).
+        Filters (emphasized/selected/etc) are applied in-memory on cached list.
+        This dramatically improves rendering performance for large designs (10k+ elements).
+
+        @param depth: depth to search within the tree
+        @param cascade_criteria: if True, cascaded descendants must also match filter criteria (default False)
+        @param kwargs: additional filter criteria (emphasized, selected, targeted, etc.)
+        """
+        allowed_filters = {"emphasized", "selected", "targeted", "highlighted", "lock"}
+        cacheable = (depth is None) and (not cascade_criteria)
+
+        # Fast path: no filters, just return the cached list
+        if cacheable and not kwargs:
+            if self._elems_nodes_cache is None:
+                with self.node_lock:
+                    self._elems_nodes_cache = list(self.elem_branch.flat(types=elem_group_nodes))
+            yield from self._elems_nodes_cache
+            return
+
+        # Medium path: cacheable with filters - apply filters in-memory
+        if cacheable and self._elems_nodes_cache is not None and set(kwargs.keys()).issubset(allowed_filters):
+            # Apply filters in-memory on cached list (same logic as elems())
+            emph_val = kwargs.get("emphasized", None)
+            sel_val = kwargs.get("selected", None)
+            targ_val = kwargs.get("targeted", None)
+            high_val = kwargs.get("highlighted", None)
+            lock_val = kwargs.get("lock", None)
+
+            cache = self._elems_nodes_cache
+            for e in cache:
+                if emph_val is not None and e.emphasized != emph_val:
+                    continue
+                if sel_val is not None and e.selected != sel_val:
+                    continue
+                if targ_val is not None and e.targeted != targ_val:
+                    continue
+                if high_val is not None and e.highlighted != high_val:
+                    continue
+                if lock_val is not None and e.lock != lock_val:
+                    continue
+                yield e
+            return
+
+        # Slow path: Direct tree traversal for complex queries (depth, cascade_criteria)
+        elements = self.elem_branch
+        yield from elements.flat(types=elem_group_nodes, depth=depth, cascade_criteria=cascade_criteria, **kwargs)
 
     def regmarks(self, **kwargs):
         elements = self.reg_branch
@@ -2443,9 +2828,18 @@ class Elemental(Service):
         #             # print ("Checked %s and will addit=%s" % (n.type, addit))
         #             if addit and n not in data:
         #                 data.append(n)
+        target = "elements"
+        if drop_node.has_ancestor("branch ops"):
+            target = "operations"
+        elif drop_node.has_ancestor("branch reg"):
+            target = "all" # Probably from both elements and regmarks
         to_be_refreshed = list(drop_node.flat())
         # _("Drag and drop")
         with self.undoscope("Drag and drop"):
+            # Optimize for batch drop if all nodes go to same target
+            nodes_to_drop = []
+            nodes_needing_relocation = []
+
             for drag_node in data:
                 to_be_refreshed.extend(drag_node.flat())
                 op_treatment = drop_node.type in op_parent_nodes and (
@@ -2460,9 +2854,7 @@ class Elemental(Service):
                     continue
                 if op_treatment and drag_node.has_ancestor("branch reg"):
                     # We need to first relocate the drag_node to the elem branch
-                    # print(f"Relocate {drag_node.type} to elem branch")
-                    with self.node_lock:
-                        self.elem_branch.drop(drag_node, flag=flag)
+                    nodes_needing_relocation.append(drag_node)
                 if drop_node.can_drop(drag_node):
                     # Is the drag node coming from the regmarks branch?
                     # If yes then we might need to classify.
@@ -2471,13 +2863,26 @@ class Elemental(Service):
                             to_classify.extend(iter(drag_node.flat(elem_nodes)))
                         else:
                             to_classify.append(drag_node)
-                    with self.node_lock:
-                        drop_node.drop(drag_node, modify=True, flag=flag)
-                    success = True
-                # else:
-                #     print(f"Drag {drag_node.type} to {drop_node.type} - Drop node vetoed")
+                    nodes_to_drop.append(drag_node)
+
+            # Batch relocate if needed
+            if nodes_needing_relocation:
+                target = "all"
+                with self.node_lock:
+                    self.elem_branch.drop_multi(nodes_needing_relocation, flag=flag)
+
+            # Batch drop to target
+            if nodes_to_drop:
+                with self.node_lock:
+                    success = drop_node.drop_multi(
+                        nodes_to_drop, modify=True, flag=flag
+                    )
+
             if self.classify_new and to_classify:
                 self.classify(to_classify)
+        # Signal tree rebuild after batch operations
+        if nodes_to_drop or nodes_needing_relocation:
+            self.signal("rebuild_tree", target)
         # Refresh the target node so any changes like color materialize...
         # print (f"Success: {success}\n{','.join(e.type for e in to_be_refreshed)}")
         self.signal("element_property_reload", to_be_refreshed)
@@ -2640,45 +3045,89 @@ class Elemental(Service):
         If any element is emphasized, all operations a references to that element are 'targeted'.
         """
         self.set_start_time("set_emphasis")
-        with self.signalfree("emphasized"):
-            for s in self._tree.flat():
-                if s.highlighted:
-                    s.highlighted = False
-                if s.targeted:
-                    s.targeted = False
-                if s.selected:
-                    s.selected = False
-                if not s.can_emphasize:
-                    continue
-                in_list = emphasize is not None and s in emphasize
-                if s.emphasized:
-                    if not in_list:
-                        s.emphasized = False
-                else:
-                    if in_list:
-                        s.emphasized = True
-                        s.selected = True
-            if emphasize is not None:
-                # Validate emphasize
-                old_first = self.first_emphasized
-                if old_first is not None and not old_first.emphasized:
-                    self.first_emphasized = None
-                    old_first = None
-                count = 0
-                for e in emphasize:
-                    count += 1
-                    if e.type == "reference":
-                        self.set_node_emphasis(e.node, True)
-                        e.highlighted = True
+        emphasize_items = list(emphasize) if emphasize is not None else []
+        try:
+            emphasize_set = set(emphasize_items)
+        except TypeError:
+            emphasize_set = None
+
+        def _is_emphasized(node):
+            if emphasize_set is not None:
+                return node in emphasize_set
+            return node in emphasize_items
+
+        changed_nodes = []
+        seen_nodes = set()
+
+        def _mark_changed(node):
+            if node not in seen_nodes:
+                changed_nodes.append(node)
+                seen_nodes.add(node)
+
+        previous_suppress = self.suppress_updates
+        self.suppress_updates = True
+        try:
+            with self.signalfree("emphasized"):
+                for s in self._tree.flat():
+                    if s.highlighted:
+                        s.highlighted = False
+                        _mark_changed(s)
+                    if s.targeted:
+                        s.targeted = False
+                        _mark_changed(s)
+                    if s.selected:
+                        s.selected = False
+                        _mark_changed(s)
+                    if not s.can_emphasize:
+                        continue
+                    in_list = _is_emphasized(s)
+                    if s.emphasized:
+                        if not in_list:
+                            s.emphasized = False
+                            _mark_changed(s)
                     else:
-                        self.set_node_emphasis(e, True)
-                        e.selected = True
-                    # if hasattr(e, "object"):
-                    #     self.target_clones(self._tree, e, e.object)
-                    self.highlight_children(e)
-                if count > 1 and old_first is None:
-                    # It makes no sense to define a 'first' here, as all are equal
-                    self.first_emphasized = None
+                        if in_list:
+                            s.emphasized = True
+                            s.selected = True
+                            _mark_changed(s)
+                if emphasize_items:
+                    # Validate emphasize
+                    old_first = self.first_emphasized
+                    if old_first is not None and not old_first.emphasized:
+                        self.first_emphasized = None
+                        old_first = None
+                    count = 0
+
+                    def _recursive_highlight(node):
+                        for child in node.children:
+                            if not child.highlighted:
+                                child.highlighted = True
+                                _mark_changed(child)
+                            _recursive_highlight(child)
+
+                    for e in emphasize_items:
+                        count += 1
+                        if e.type == "reference":
+                            self.set_node_emphasis(e.node, True)
+                            _mark_changed(e.node)
+                            e.highlighted = True
+                            _mark_changed(e)
+                        else:
+                            self.set_node_emphasis(e, True)
+                            _mark_changed(e)
+                            e.selected = True
+                            _mark_changed(e)
+                        # if hasattr(e, "object"):
+                        #     self.target_clones(self._tree, e, e.object)
+                        _recursive_highlight(e)
+                    if count > 1 and old_first is None:
+                        # It makes no sense to define a 'first' here, as all are equal
+                        self.first_emphasized = None
+        finally:
+            self.suppress_updates = previous_suppress
+        if changed_nodes:
+            self.signal("invalidate_layer", "elements")
+            self.signal("refresh_tree", changed_nodes)
         self.set_end_time("set_emphasis")
 
     def center(self):
@@ -2733,7 +3182,9 @@ class Elemental(Service):
                 y = x[1]
                 x = x[0]
             return box[0] <= x <= box[2] and box[1] <= y <= box[3]
-
+        
+        
+        t0 = time()
         if self.has_emphasis():
             if (
                 self._emphasized_bounds is not None
@@ -2845,6 +3296,7 @@ class Elemental(Service):
 
         def post_classify_function(**kwargs):
             if self.classify_new and len(data) > 0:
+                # Translation hint _("Classify elements")
                 with self.undoscope("Classify elements"):
                     self.classify(data)
                 self.signal("tree_changed")
@@ -2903,11 +3355,19 @@ class Elemental(Service):
             return
         new_operations_added = False
         debug_set = {}
+        hits = {}
 
         def update_debug_set(debug_set, opnode):
             if opnode.type not in debug_set:
                 debug_set[opnode.type] = 0
             debug_set[opnode.type] = debug_set[opnode.type] + 1
+
+        def record_hit(opnode, element_node):
+            if opnode is None or element_node is None:
+                return
+            if opnode not in hits:
+                hits[opnode] = set()
+            hits[opnode].add(element_node)
 
         if len(list(self.ops())) == 0 and not self.operation_default_empty:
             has_cut = False
@@ -3011,7 +3471,12 @@ class Elemental(Service):
                         debug(
                             f"For {op.type}.{op.id}: black={is_black}, perform={perform_classification}, flag={self.classify_black_as_raster}"
                         )
-                    if not (hasattr(op, "classify") and perform_classification):
+                    # Support both would_classify (new) and classify (legacy) for backward compatibility
+                    has_would_classify = hasattr(op, "would_classify")
+                    has_classify = hasattr(op, "classify")
+                    if not (
+                        (has_would_classify or has_classify) and perform_classification
+                    ):
                         continue
                     classified = False
                     classifying_op = None
@@ -3041,12 +3506,27 @@ class Elemental(Service):
                             add_op_function(raster_candidate)
                             new_operations_added = True
 
-                        classified, should_break, feedback = raster_candidate.classify(
-                            node,
-                            fuzzy=tempfuzzy,
-                            fuzzydistance=fuzzydistance,
-                            usedefault=False,
-                        )
+                        if hasattr(raster_candidate, "would_classify"):
+                            classified, should_break, feedback = (
+                                raster_candidate.would_classify(
+                                    node,
+                                    fuzzy=tempfuzzy,
+                                    fuzzydistance=fuzzydistance,
+                                    usedefault=False,
+                                )
+                            )
+                            if classified:
+                                record_hit(raster_candidate, node)
+                        else:
+                            # Fallback for legacy operations
+                            classified, should_break, feedback = (
+                                raster_candidate.classify(
+                                    node,
+                                    fuzzy=tempfuzzy,
+                                    fuzzydistance=fuzzydistance,
+                                    usedefault=False,
+                                )
+                            )
                         if classified:
                             classifying_op = raster_candidate
                             should_break = True
@@ -3056,12 +3536,23 @@ class Elemental(Service):
                                 )
 
                     if not classified:
-                        classified, should_break, feedback = op.classify(
-                            node,
-                            fuzzy=tempfuzzy,
-                            fuzzydistance=fuzzydistance,
-                            usedefault=False,
-                        )
+                        if has_would_classify:
+                            classified, should_break, feedback = op.would_classify(
+                                node,
+                                fuzzy=tempfuzzy,
+                                fuzzydistance=fuzzydistance,
+                                usedefault=False,
+                            )
+                            if classified:
+                                record_hit(op, node)
+                        else:
+                            # Fallback for legacy operations
+                            classified, should_break, feedback = op.classify(
+                                node,
+                                fuzzy=tempfuzzy,
+                                fuzzydistance=fuzzydistance,
+                                usedefault=False,
+                            )
                         if classified:
                             classifying_op = op
                     if classified:
@@ -3137,7 +3628,7 @@ class Elemental(Service):
                 default_candidates = []
                 for op in operations:
                     if (
-                        hasattr(op, "classify")
+                        (hasattr(op, "would_classify") or hasattr(op, "classify"))
                         and getattr(op, "default", False)
                         and hasattr(op, "valid_node_for_reference")
                         and op.valid_node_for_reference(node)
@@ -3148,12 +3639,23 @@ class Elemental(Service):
                         f"For node {node_desc} there were {len(default_candidates)} default operations available, nb the very first will be taken!"
                     )
                 for op in default_candidates:
-                    classified, should_break, feedback = op.classify(
-                        node,
-                        fuzzy=fuzzy,
-                        fuzzydistance=fuzzydistance,
-                        usedefault=True,
-                    )
+                    if hasattr(op, "would_classify"):
+                        classified, should_break, feedback = op.would_classify(
+                            node,
+                            fuzzy=fuzzy,
+                            fuzzydistance=fuzzydistance,
+                            usedefault=True,
+                        )
+                        if classified:
+                            record_hit(op, node)
+                    else:
+                        # Fallback for legacy operations
+                        classified, should_break, feedback = op.classify(
+                            node,
+                            fuzzy=fuzzy,
+                            fuzzydistance=fuzzydistance,
+                            usedefault=True,
+                        )
                     if classified:
                         update_debug_set(debug_set, op)
                         # Default ops fulfill stuff by definition
@@ -3411,7 +3913,12 @@ class Elemental(Service):
                         else:
                             sameop = False
                         samecolor = False
-                        if hasattr(op, "color") and hasattr(testop, "color"):
+                        if (
+                            hasattr(op, "color")
+                            and hasattr(testop, "color")
+                            and self._valid_color(op.color)
+                            and self._valid_color(testop.color)
+                        ):
                             # print ("Comparing color %s to %s" % ( op.color, testop.color ))
                             if fuzzy:
                                 if (
@@ -3456,19 +3963,25 @@ class Elemental(Service):
                     existing = False
                     if hasattr(op, "is_referenced"):
                         existing = op.is_referenced(node)
+                    if not existing:
+                        if op in hits and node in hits[op]:
+                            existing = True
 
                     if not existing:
-                        with self._node_lock:
-                            op.add_reference(node)
+                        record_hit(op, node)
                         update_debug_set(debug_set, op)
+
+        if hits:
+            with self._node_lock:
+                for op, nodes in hits.items():
+                    op.add_references(list(nodes), fast=True)
 
         self.remove_unused_default_copies()
         if debug:
             debug("Summary:")
             for key, count in debug_set.items():
                 debug(f"{count} items assigned to {key}")
-        if new_operations_added:
-            self.signal("tree_changed")
+        self.signal("rebuild_tree", "operations")
 
     def add_classify_op(self, op):
         """
@@ -4289,7 +4802,8 @@ class Elemental(Service):
                     self.set_start_time("load")
                     self.set_start_time("full_load")
                     # _("Load elements")
-                    with self.undoscope("Load elements"):
+                    # No signals during load
+                    with self.undoscope("Load elements", static=self.fastload):
                         try:
                             # We could stop the attachment to shadowtree for the duration
                             # of the load to avoid unnecessary actions, this will provide
@@ -4310,7 +4824,7 @@ class Elemental(Service):
                             with self._node_lock:
                                 for e in self.elems_nodes():
                                     if e not in _stored_elements:
-                                        self.added_elements.append(e)
+                                        self._added_elements.append(e)
                             # self.listen_tree(self)
                             self._filename = pathname
                             self.set_end_time("load", display=True)
@@ -4343,7 +4857,7 @@ class Elemental(Service):
 
     def clear_loaded_information(self):
         with self._node_lock:
-            self.added_elements.clear()
+            self._added_elements.clear()
 
     def load_types(self, all=True):
         kernel = self.kernel

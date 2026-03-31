@@ -40,6 +40,17 @@ def _get_camera_attribute(kernel, camera, attribute, default=None):
     label = kernel.read_persistent(str, camera, attribute, default)
     return label or default
 
+def has_live_job(cam):
+    we_have_a_job = False
+    try:
+        obj = cam.context.kernel.jobs[
+            f"timer.updatebg{cam.index}"
+        ]
+        if obj is not None:
+            we_have_a_job = True
+    except KeyError:
+        pass
+    return we_have_a_job
 
 def register_panel_camera(window, context):
     max_range = context.kernel.root.setting(int, "search_range", 5) or 5
@@ -47,7 +58,11 @@ def register_panel_camera(window, context):
         panel = CameraPanel(
             window, wx.ID_ANY, context=context, gui=window, index=index, pane=True
         )
-        label = _("Camera {index}").format(index=index)
+        label = getattr(
+            panel,
+            "_camera_unavailable_label",
+            _("Camera {index}").format(index=index),
+        )
         pane = (
             aui.AuiPaneInfo()
             .Left()
@@ -98,6 +113,25 @@ class CameraPanel(wx.Panel, Job):
 
         self.context(f"camera{self.index}\n")  # command activates Camera service
         self.camera = self.context.get_context(f"camera/{self.index}")
+        if not hasattr(self.camera, "aspect"):
+            channel = self.context.kernel.channel("console")
+            label = _("Camera {index} (Unavailable)").format(index=self.index)
+            self._camera_unavailable_label = label
+            channel(
+                _(
+                    "Camera service not initialized; panel disabled for camera {index}."
+                ).format(index=self.index)
+            )
+            if self.pane and self.pane_aui is not None:
+                self.pane_aui.Caption(label)
+                self.pane_aui.caption = label
+            else:
+                try:
+                    self.GetParent().SetTitle(label)
+                except Exception:
+                    pass
+            self.Disable()
+            return
         self.camera.setting(int, "frames_per_second", 30)
         self._remembered = -1
         self.available_resolutions = []
@@ -277,7 +311,9 @@ class CameraPanel(wx.Panel, Job):
         )
 
     def pane_hide(self, *args):
-        self.camera(f"camera{self.index} stop\n")
+        if not has_live_job(self):
+            # Don't prevent live updates from happening
+            self.camera(f"camera{self.index} stop\n")
         self.camera.unschedule(self)
         self.display_camera.stop_scene()
         if not self.pane:
@@ -460,8 +496,8 @@ class CameraPanel(wx.Panel, Job):
 
 
 class CamInterfaceWidget(Widget):
-    def __init__(self, scene, camera):
-        Widget.__init__(self, scene, all=True)
+    def __init__(self, scene, camera, **kwargs):
+        Widget.__init__(self, scene, all=True, **kwargs)
         self.cam = camera
 
     def process_draw(self, gc: wx.GraphicsContext):
@@ -485,6 +521,7 @@ class CamInterfaceWidget(Widget):
 
     def hit(self):
         return HITCHAIN_HIT
+
 
     def event(self, window_pos=None, space_pos=None, event_type=None, **kwargs):
         if event_type == "rightdown":
@@ -587,19 +624,8 @@ class CamInterfaceWidget(Widget):
                     id=item.GetId(),
                 )
 
-            def has_live_job():
-                we_have_a_job = False
-                try:
-                    obj = self.cam.context.kernel.jobs[
-                        f"timer.updatebg{self.cam.index}"
-                    ]
-                    if obj is not None:
-                        we_have_a_job = True
-                except KeyError:
-                    pass
-                return we_have_a_job
 
-            if has_live_job():
+            if has_live_job(self.cam):
                 submenu.AppendSeparator()
                 item = submenu.Append(wx.ID_ANY, "Disable")
                 self.cam.Bind(
@@ -828,12 +854,12 @@ class CamInterfaceWidget(Widget):
 
 
 class CamPerspectiveWidget(Widget):
-    def __init__(self, scene, camera, index, mid=False):
+    def __init__(self, scene, camera, index, mid=False, **kwargs):
         self.cam = camera
         self.mid = mid
         self.index = index
         half = CORNER_SIZE / 2.0
-        Widget.__init__(self, scene, -half, -half, half, half)
+        Widget.__init__(self, scene, -half, -half, half, half, **kwargs)
         self.update()
         c = Color.distinct(self.index + 2)
         self.pen = wx.Pen(wx.Colour(c.red, c.green, c.blue))
@@ -879,8 +905,8 @@ class CamPerspectiveWidget(Widget):
 
 
 class CamSceneWidget(Widget):
-    def __init__(self, scene, camera):
-        Widget.__init__(self, scene, all=True)
+    def __init__(self, scene, camera, **kwargs):
+        Widget.__init__(self, scene, all=True, **kwargs)
         self.cam = camera
 
     def process_draw(self, gc):
@@ -906,8 +932,8 @@ class CamSceneWidget(Widget):
 
 
 class CamImageWidget(Widget):
-    def __init__(self, scene, camera):
-        Widget.__init__(self, scene, all=False)
+    def __init__(self, scene, camera, **kwargs):
+        Widget.__init__(self, scene, all=False, **kwargs)
         self.cam = camera
 
     def process_draw(self, gc):

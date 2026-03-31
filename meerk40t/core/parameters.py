@@ -250,6 +250,9 @@ class Parameters:
 
     @dpi.setter
     def dpi(self, value):
+        if value == 0:
+            print(f"Warning: dpi cannot be zero, adjusting to 1")
+            value = 1
         self.settings["dpi"] = value
         self.__dict__["dpi"] = value
 
@@ -398,7 +401,10 @@ class Parameters:
     def implicit_passes(self):
         if not self.passes_custom:
             return 1
-        return self.passes
+        try:
+            return max(int(self.passes), 1)
+        except (TypeError, ValueError):
+            return 1
 
     @property
     def loops(self):

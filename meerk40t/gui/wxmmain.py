@@ -314,6 +314,10 @@ class MeerK40t(MWindow):
         width, height = wx.DisplaySize()
 
         super().__init__(int(width * 0.9), int(height * 0.9), *args, **kwds)
+        theme = self.context.themes
+        import meerk40t.gui.icons as icons
+
+        icons.DARKMODE = theme.dark
 
         # We do this very early to allow resizing events to do their thing...
         self.restore_aspect(honor_initial_values=True)
@@ -842,7 +846,7 @@ class MeerK40t(MWindow):
                 if node.can_emphasize:
                     node.emphasized = flag
             elements.validate_selected_area()
-            self.context.signal("refresh_scene", "Scene")
+            self.context.elements.refresh_signal()
 
         def on_click_properties():
             self.context("window open Properties\n")
@@ -1116,6 +1120,7 @@ class MeerK40t(MWindow):
         bits = DRAW_MODE_REGMARKS
         self.context.draw_mode ^= bits
         self.context.signal("draw_mode", self.context.draw_mode)
+        self.context.signal("invalidate_layer", "generic")
         self.context.signal("refresh_scene", "Scene")
 
     @signal_listener("system_font_directories")
@@ -1493,6 +1498,7 @@ class MeerK40t(MWindow):
                 "section": "Snap-Options",
                 # Hint for translation _("Element-Points")
                 "subsection": "Element-Points",
+                "relevant": True,
             },
             {
                 "attr": "action_attract_len",
@@ -1512,6 +1518,7 @@ class MeerK40t(MWindow):
                 "section": "Snap-Options",
                 # Hint for translation _("Element-Points")
                 "subsection": "Element-Points",
+                "relevant": True,
             },
             {
                 "attr": "snap_grid",
@@ -1527,6 +1534,7 @@ class MeerK40t(MWindow):
                 "section": "Snap-Options",
                 # Hint for translation _("Grid")
                 "subsection": "Grid",
+                "relevant": True,
             },
             {
                 "attr": "grid_attract_len",
@@ -1546,6 +1554,7 @@ class MeerK40t(MWindow):
                 "section": "Snap-Options",
                 # Hint for translation _("Grid")
                 "subsection": "Grid",
+                "relevant": True,
             },
             {
                 "attr": "clear_magnets",
@@ -1561,6 +1570,39 @@ class MeerK40t(MWindow):
                 "section": "Snap-Options",
                 # Hint for translation _("Magnetlines")
                 "subsection": "Magnetlines",
+            },
+            {
+                "attr": "snap_instant",
+                "object": context.root,
+                "default": False,
+                "type": bool,
+                "label": _("Instant Snap Display"),
+                "tip": _(
+                    "Calculate and display snap points immediately during mouse movement (may affect performance)\n"
+                    "If disabled, snap points are only calculated when the mouse is not moving"
+                ),
+                "page": "Scene",
+                # Hint for translation _("Snap-Options")
+                "section": "Snap-Options",
+                # Hint for translation _("Instant Snap Display")
+                "subsection": "Instant Snap Display",
+                "relevant": True,
+            },
+            {
+                "attr": "snap_preview",
+                "object": context.root,
+                "default": True,
+                "type": bool,
+                "label": _("Show snap line"),
+                "tip": _(
+                    "Displays a preview line from the cursor to the snap point"
+                ),
+                "page": "Scene",
+                # Hint for translation _("Snap-Options")
+                "section": "Snap-Options",
+                # Hint for translation _("Instant Snap Display")
+                "subsection": "Instant Snap Display",
+                "relevant": True,
             },
         ]
         for c in choices:
@@ -4298,6 +4340,7 @@ class MeerK40t(MWindow):
             self.context.draw_mode ^= bits
             self.context.signal("draw_mode", self.context.draw_mode)
             self.context.elements.modified()
+            self.context.signal("invalidate_layer", "all")
             self.context.signal("refresh_scene", "Scene")
             self.context.signal("theme")
 
@@ -5374,7 +5417,7 @@ class MeerK40t(MWindow):
                 )
                 if elements.classify_new:
                     elements.classify([node])
-            self.context.signal("refresh_scene", "Scene")
+            elements.refresh_signal()
 
     @signal_listener("statusmsg")
     def on_update_statusmsg(self, origin, value):

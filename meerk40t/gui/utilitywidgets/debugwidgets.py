@@ -21,12 +21,13 @@ def register_widget_icon(context):
         corfile_widget = IconsWidget(scene)
         scene.widget_root.scene_widget.add_widget(-1, corfile_widget)
         scene.widget_root.focus_viewport_scene((0, 0, 0xFFFF, 0xFFFF), scene.gui.Size)
+        scene.invalidate_background()
         scene.request_refresh()
 
 
 class IconsWidget(Widget):
-    def __init__(self, scene):
-        Widget.__init__(self, scene, all=True)
+    def __init__(self, scene, **kwargs):
+        Widget.__init__(self, scene, all=True, **kwargs)
         self.is_opened = True
         self.font_color = wx.Colour()
         self.font_color.SetRGBA(0xFF000000)
@@ -68,6 +69,7 @@ class IconsWidget(Widget):
 
     def close(self):
         self.scene.pop_stack()
+        self.scene.invalidate_background()
         self.scene.request_refresh()
         self.is_opened = False
 

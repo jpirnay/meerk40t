@@ -822,7 +822,7 @@ def plugin(kernel, lifecycle=None):
                 channel(_("No selected images."))
                 return
             images = [
-                e for e in elements.elems(emphasized=True) if e.type == "elem image"
+                e for e in elements.flat(emphasized=True) if e.type == "elem image"
             ]
             return "image", images
 
@@ -2021,8 +2021,8 @@ def plugin(kernel, lifecycle=None):
 
             if elements.classify_new and data_out:
                 elements.classify(data_out)
-
-        context.signal("refresh_scene", "Scene")
+        
+        elements.refresh_signal()
         return "image", data_out
 
     @context.console_option(
@@ -2673,6 +2673,7 @@ def plugin(kernel, lifecycle=None):
                 data_out.append(rnode)
                 return idx
 
+            # _("Create lines")
             with context.elements.undoscope("Create lines"):
                 idx = 0
                 for path in multiple:
